@@ -62,7 +62,41 @@
 }
 
 /* Dark Theme Palette */
-[data-theme='dark'],
+[data-theme='dark'] {
+  --color-bg-app: #101214;
+  --color-bg-surface: #181b1f;
+  --color-bg-subtle: #22262c;
+  --color-bg-hover: #2b3038;
+  --color-bg-active: #343b44;
+
+  --color-border: #2e343d;
+  --color-border-subtle: #242930;
+  --color-border-focus: #3b9bd5;
+
+  --color-text-primary: #ededed;
+  --color-text-secondary: #a0a8b2;
+  --color-text-muted: #6e7682;
+  --color-text-inverse: #101214;
+
+  --color-accent: #338cc2;
+  --color-accent-hover: #4ea5db;
+  --color-accent-subtle: #162a38;
+  --color-accent-border: #1d4661;
+
+  --status-new: #829ab1;
+  --status-triaged: #4ea5db;
+  --status-in-progress: #e07d10;
+  --status-blocked: #eb442c;
+  --status-awaiting-approval: #9e75ff;
+  --status-resolved: #38b277;
+  --status-closed: #79828d;
+
+  --prio-urgent: #eb442c;
+  --prio-high: #e07d10;
+  --prio-medium: #829ab1;
+  --prio-low: #626d7a;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --color-bg-app: #101214;

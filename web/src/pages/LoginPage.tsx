@@ -3,12 +3,12 @@ import { useAuth } from '../AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 const DEMO_ACCOUNTS = [
-  { name: 'Priya Patel', role: 'Ops Lead / Eng Viewer', email: 'priya@newtonite.internal', pass: 'demo-password-123' },
-  { name: 'Elena Rostova', role: 'Engineering Lead', email: 'elena@newtonite.internal', pass: 'demo-password-123' },
-  { name: 'Sarah Chen', role: 'Support Lead', email: 'sarah@newtonite.internal', pass: 'demo-password-123' },
-  { name: 'Arjun Das', role: 'Ops Member', email: 'arjun@newtonite.internal', pass: 'demo-password-123' },
-  { name: 'Sofia Rodriguez', role: 'Engineering Member', email: 'sofia@newtonite.internal', pass: 'demo-password-123' },
-  { name: 'Admin User', role: 'Org Administrator', email: 'admin@newtonite.internal', pass: 'admin-secret-password' },
+  { name: 'Alice Admin', role: 'Org Administrator', email: 'admin@newtonite.local', pass: 'Password123!' },
+  { name: 'Priya Sharma', role: 'Ops Lead / Eng Viewer', email: 'priya.lead@newtonite.local', pass: 'Password123!' },
+  { name: 'Arjun Patel', role: 'Engineering Lead', email: 'arjun.lead@newtonite.local', pass: 'Password123!' },
+  { name: 'Elena Rostova', role: 'Ops Member', email: 'elena.member@newtonite.local', pass: 'Password123!' },
+  { name: 'Sarah Jenkins', role: 'Ops Viewer', email: 'sarah.viewer@newtonite.local', pass: 'Password123!' },
+  { name: 'Sofia Rossi', role: 'Payments Lead', email: 'sofia.lead@newtonite.local', pass: 'Password123!' },
 ];
 
 export const LoginPage: React.FC = () => {
