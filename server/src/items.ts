@@ -1495,7 +1495,7 @@ export async function getItemCommentsHandler(req: Request, res: Response): Promi
 export async function getAttentionDashboardHandler(req: Request, res: Response): Promise<void> {
   const user = req.user!;
 
-  const memFilter = buildMembershipFilter(user.id, user.isOrgAdmin, 2);
+  const memFilter = buildMembershipFilter(user.id, user.isOrgAdmin, 1);
 
   try {
     // 1. Awaiting my approval (items in user's teams requiring approval where user is lead/admin)
@@ -1567,8 +1567,8 @@ export async function getAttentionDashboardHandler(req: Request, res: Response):
     const [awaitingApproval, mineDue, urgentUnassigned, goneQuiet, unreadNotifications] = await Promise.all([
       pool.query(awaitingApprovalSql, [user.id, user.isOrgAdmin]),
       pool.query(mineDueSql, [user.id]),
-      pool.query(urgentUnassignedSql, [user.id, ...memFilter.params]),
-      pool.query(goneQuietSql, [user.id, ...memFilter.params]),
+      pool.query(urgentUnassignedSql, memFilter.params),
+      pool.query(goneQuietSql, memFilter.params),
       pool.query(notificationsSql, [user.id]),
     ]);
 
