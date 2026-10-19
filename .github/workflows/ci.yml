@@ -1,0 +1,154 @@
+name: CI & Deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server CI
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: newtonite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Lint server
+        run: npm --prefix server run lint
+
+      - name: Typecheck server
+        run: npm --prefix server run typecheck
+
+      - name: Run migrations on test DB
+        env:
+          DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
+        run: npm --prefix server run migrate
+
+      - name: Run server test suite
+        env:
+          DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
+          SESSION_SECRET: test-session-secret-must-be-at-least-32-chars
+          NODE_ENV: test
+        run: npm --prefix server run test
+
+      - name: Build server bundle
+        run: npm --prefix server run build
+
+  web:
+    name: Web CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Lint web
+        run: npm --prefix web run lint
+
+      - name: Typecheck web
+        run: npm --prefix web run typecheck
+
+      - name: Run web frontend tests
+        run: npm --prefix web run test
+
+      - name: Build web bundle
+        run: npm --prefix web run build
+
+  deploy-migrations:
+    name: Deploy DB Migrations
+    needs: [server, web]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      HAS_DB_SECRET: ${{ secrets.DATABASE_URL != '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Check DATABASE_URL secret
+        if: env.HAS_DB_SECRET == 'false'
+        run: |
+          echo "::notice ::DATABASE_URL secret is not set in production environment. Skipping automated migration."
+
+      - name: Checkout code
+        if: env.HAS_DB_SECRET == 'true'
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 24
+        if: env.HAS_DB_SECRET == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install server dependencies
+        if: env.HAS_DB_SECRET == 'true'
+        run: npm --prefix server ci
+
+      - name: Apply migrations to production database
+        if: env.HAS_DB_SECRET == 'true'
+        run: npm --prefix server run migrate
+
+  deploy-render:
+    name: Trigger Render Deployment
+    needs: [server, web, deploy-migrations]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      HAS_HOOK_SECRET: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+    steps:
+      - name: Check RENDER_DEPLOY_HOOK_URL secret
+        if: env.HAS_HOOK_SECRET == 'false'
+        run: |
+          echo "::notice ::RENDER_DEPLOY_HOOK_URL secret is not set in production environment. Skipping automated Render deploy hook."
+
+      - name: Trigger Render Deploy Hook
+        if: env.HAS_HOOK_SECRET == 'true'
+        run: |
+          echo "Triggering Render deploy hook..."
+          curl -f -X POST "${RENDER_DEPLOY_HOOK_URL}"
