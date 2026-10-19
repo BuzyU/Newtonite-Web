@@ -301,9 +301,68 @@ export async function getItemHandler(req: Request, res: Response): Promise<void>
 
     const item = result.rows[0];
 
+    // Fetch initial activity timeline (keyset cursor for subsequent pages)
+    const activityRes = await pool.query(
+      `SELECT 
+         al.id,
+         al.item_id,
+         al.actor_id,
+         u.name as actor_name,
+         u.email as actor_email,
+         al.action,
+         al.old_values,
+         al.new_values,
+         al.note,
+         al.is_org_admin_override,
+         al.created_at
+       FROM activity_log al
+       JOIN users u ON u.id = al.actor_id
+       WHERE al.item_id = $1
+       ORDER BY al.created_at DESC, al.id DESC
+       LIMIT 20`,
+      [item.id]
+    );
+
+    function computeNextAttention(it: typeof item, u: { id: string }): string {
+      if (it.status === 'new') {
+        return 'Item requires initial triage and classification before work can commence.';
+      }
+      if (it.status === 'triaged') {
+        if (!it.assignee_id) {
+          return 'Item is triaged and unassigned. Claim this item or assign an operator to start work.';
+        }
+        return `Assigned to ${it.assignee_name || 'operator'}. Awaiting transition to In Progress.`;
+      }
+      if (it.status === 'in_progress') {
+        if (it.assignee_id === u.id) {
+          return 'You are the active operator. Complete investigation and resolve, or request approval.';
+        }
+        return `Active investigation by ${it.assignee_name || 'operator'}. Awaiting completion or escalation.`;
+      }
+      if (it.status === 'blocked') {
+        return 'Work is blocked on an external dependency. Monitor for clearance or add resolution notes.';
+      }
+      if (it.status === 'awaiting_approval') {
+        return 'Work completed. Awaiting review and approval from a Team Lead or Org Admin.';
+      }
+      if (it.status === 'resolved') {
+        return 'Resolved. Pending final operational review and closure.';
+      }
+      if (it.status === 'closed') {
+        return 'Closed. If regression occurs, reopen the item to restart triage.';
+      }
+      return 'Review item status and activity timeline.';
+    }
+
+    const computedNext = computeNextAttention(item, user);
+
     // Emit ETag header with version
     res.setHeader('ETag', `"${item.version}"`);
-    res.status(200).json({ item });
+    res.status(200).json({
+      item,
+      activity: activityRes.rows,
+      computed_next: computedNext,
+    });
   } catch (err) {
     logger.error({ err, idOrRef, requestId: req.requestId }, 'Failed retrieving item detail');
     res.status(500).json({
@@ -800,6 +859,17 @@ export async function updateItemHandler(req: Request, res: Response): Promise<vo
     );
 
     const updatedItem = updateRes.rows[0];
+    if (!updatedItem) {
+      await client.query('ROLLBACK');
+      res.status(412).json({
+        error: {
+          code: 'STALE_VERSION',
+          message: 'The item was modified by another operator during processing.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
 
     // Activity log entry
     await client.query(
@@ -911,6 +981,37 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
 
     const item = itemRes.rows[0];
 
+    // Optimistic concurrency check if If-Match header is provided
+    const ifMatch = req.headers['if-match'];
+    let expectedVersion: number | null = null;
+    if (ifMatch) {
+      expectedVersion = parseInt(ifMatch.replace(/["\s]/g, ''), 10);
+      if (isNaN(expectedVersion)) {
+        await client.query('ROLLBACK');
+        res.status(400).json({
+          error: {
+            code: 'INVALID_IF_MATCH',
+            message: 'If-Match header must be a valid integer version (e.g. "1").',
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
+      if (item.version !== expectedVersion) {
+        await client.query('ROLLBACK');
+        res.status(412).json({
+          error: {
+            code: 'STALE_VERSION',
+            message: `The item has been modified by another user (current version: ${item.version}, provided: ${expectedVersion}).`,
+            currentVersion: item.version,
+            currentItem: item,
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
+    }
+
     // If reopening, action flag is true
     const isReopenAction = action === 'reopen' || (item.status === 'closed' || item.status === 'resolved') && targetStatus === 'triaged';
     const isApprovalAction = action === 'approve' || targetStatus === 'resolved' && item.status === 'awaiting_approval';
@@ -1016,23 +1117,50 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
     const finalResolutionNote = resolutionNote !== undefined ? resolutionNote : item.resolution_note;
     const closedAt = (targetStatus === 'closed') ? new Date().toISOString() : (isReopenAction ? null : item.closed_at);
 
-    const updateRes = await client.query(
-      `UPDATE items
-       SET status = $1,
-           approval_status = $2,
-           approved_by = $3,
-           resolution_note = $4,
-           assignee_id = $5,
-           closed_at = $6,
-           version = version + 1,
-           updated_at = NOW(),
-           last_activity_at = NOW()
-       WHERE id = $7
-       RETURNING *`,
-      [targetStatus, newApprovalStatus, approvedBy, finalResolutionNote, effectiveAssigneeId, closedAt, itemId]
-    );
+    const updateSql = expectedVersion !== null
+      ? `UPDATE items
+         SET status = $1,
+             approval_status = $2,
+             approved_by = $3,
+             resolution_note = $4,
+             assignee_id = $5,
+             closed_at = $6,
+             version = version + 1,
+             updated_at = NOW(),
+             last_activity_at = NOW()
+         WHERE id = $7 AND version = $8
+         RETURNING *`
+      : `UPDATE items
+         SET status = $1,
+             approval_status = $2,
+             approved_by = $3,
+             resolution_note = $4,
+             assignee_id = $5,
+             closed_at = $6,
+             version = version + 1,
+             updated_at = NOW(),
+             last_activity_at = NOW()
+         WHERE id = $7
+         RETURNING *`;
 
+    const updateParams = expectedVersion !== null
+      ? [targetStatus, newApprovalStatus, approvedBy, finalResolutionNote, effectiveAssigneeId, closedAt, itemId, expectedVersion]
+      : [targetStatus, newApprovalStatus, approvedBy, finalResolutionNote, effectiveAssigneeId, closedAt, itemId];
+
+    const updateRes = await client.query(updateSql, updateParams);
     const updatedItem = updateRes.rows[0];
+
+    if (!updatedItem) {
+      await client.query('ROLLBACK');
+      res.status(412).json({
+        error: {
+          code: 'STALE_VERSION',
+          message: 'The item was modified by another operator during transition.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
 
     // 4. Activity log
     const activityAction = isReopenAction

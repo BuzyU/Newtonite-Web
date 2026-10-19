@@ -104,4 +104,36 @@ describe('Versioning & Optimistic Concurrency', () => {
     expect(itemRes.rows[0].version).toBe(initialVersion + 1);
     expect(itemRes.rows[0].title).toBe('Successfully updated title with matching ETag');
   });
+
+  it('rejects state transition with stale If-Match header with 412 STALE_VERSION', async () => {
+    const client = authenticatedRequest(memberAuth);
+
+    const res = await client
+      .post(`/api/v1/items/${testItemId}/transition`)
+      .set('If-Match', '"999"')
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        status: 'triaged',
+      });
+
+    expect(res.status).toBe(412);
+    expect(res.body.error.code).toBe('STALE_VERSION');
+  });
+
+  it('accepts state transition with matching If-Match header and increments version', async () => {
+    const client = authenticatedRequest(memberAuth);
+    const currentVersion = initialVersion + 1;
+
+    const res = await client
+      .post(`/api/v1/items/${testItemId}/transition`)
+      .set('If-Match', `"${currentVersion}"`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        status: 'triaged',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.item.version).toBe(currentVersion + 1);
+    expect(res.body.item.status).toBe('triaged');
+  });
 });

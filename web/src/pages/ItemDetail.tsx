@@ -90,6 +90,10 @@ export const ItemDetail: React.FC = () => {
   // Claim error state (409 ALREADY_CLAIMED)
   const [claimError, setClaimError] = useState<string | null>(null);
 
+  // Saving / saved / failed feedback state
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // New comment state
   const [newComment, setNewComment] = useState('');
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -123,20 +127,26 @@ export const ItemDetail: React.FC = () => {
 
   // Mutation for updating item with optimistic concurrency (If-Match)
   const updateMutation = useMutation({
-    mutationFn: ({ changes, version }: { changes: any; version: number }) =>
-      api.patch(`/items/${id}`, changes, {
+    mutationFn: ({ changes, version }: { changes: any; version: number }) => {
+      setSaveStatus('saving');
+      setActionError(null);
+      return api.patch(`/items/${id}`, changes, {
         headers: {
           'If-Match': `"${version}"`,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       setIsEditing(false);
+      setSaveStatus('saved');
       setStaleConflict(null);
+      setTimeout(() => setSaveStatus('idle'), 3000);
       queryClient.invalidateQueries({ queryKey: ['item', id] });
       queryClient.invalidateQueries({ queryKey: ['items'] });
       queryClient.invalidateQueries({ queryKey: ['attention'] });
     },
     onError: (err: any) => {
+      setSaveStatus('failed');
       if (err instanceof ApiError && err.status === 412) {
         // Concurrency conflict! Server returned current version
         setStaleConflict({
@@ -145,7 +155,7 @@ export const ItemDetail: React.FC = () => {
           message: err.message || 'This item was updated by another team member while you were editing.',
         });
       } else {
-        alert(err.message || 'Failed to save changes');
+        setActionError(err.message || 'Failed to save changes');
       }
     },
   });
@@ -173,26 +183,37 @@ export const ItemDetail: React.FC = () => {
   // Mutation for state transitions
   const transitionMutation = useMutation({
     mutationFn: ({ targetStatus, action, note }: { targetStatus?: string; action?: string; note?: string }) => {
+      setActionError(null);
+      const headers = item?.version ? { 'If-Match': `"${item.version}"` } : undefined;
       if (action === 'approve') {
-        return api.post(`/items/${id}/approve`, { note });
+        return api.post(`/items/${id}/approve`, { note }, { headers });
       }
       if (action === 'reject') {
-        return api.post(`/items/${id}/reject`, { note });
+        return api.post(`/items/${id}/reject`, { note }, { headers });
       }
       if (action === 'reopen') {
-        return api.post(`/items/${id}/reopen`, { note });
+        return api.post(`/items/${id}/reopen`, { note }, { headers });
       }
-      return api.post(`/items/${id}/transition`, { status: targetStatus, note });
+      return api.post(`/items/${id}/transition`, { status: targetStatus, note }, { headers });
     },
     onSuccess: () => {
       setActionModal(null);
       setActionNote('');
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['item', id] });
       queryClient.invalidateQueries({ queryKey: ['items'] });
       queryClient.invalidateQueries({ queryKey: ['attention'] });
     },
     onError: (err: any) => {
-      alert(err.message || 'Transition failed');
+      if (err instanceof ApiError && err.status === 412) {
+        setStaleConflict({
+          serverItem: err.details?.current_item || null,
+          userChanges: null,
+          message: err.message || 'Item was updated by another operator. Please reload.',
+        });
+      } else {
+        setActionError(err.message || 'Transition failed');
+      }
     },
   });
 
@@ -268,6 +289,33 @@ export const ItemDetail: React.FC = () => {
           ← Back to All Work
         </Link>
       </div>
+
+      {/* Inline Action Error Banner */}
+      {actionError && (
+        <div
+          style={{
+            padding: '10px 14px',
+            backgroundColor: 'rgba(219, 43, 43, 0.08)',
+            border: '1px solid var(--color-danger)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-danger)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>{actionError}</span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setActionError(null)}
+            style={{ fontSize: '12px', padding: '2px 8px' }}
+          >
+            ✕ Dismiss
+          </button>
+        </div>
+      )}
 
       {/* STALE VERSION CONFLICT RESOLUTION PANEL (Section 5.2 / Section 10) */}
       {staleConflict && (
@@ -393,6 +441,16 @@ export const ItemDetail: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {saveStatus === 'saving' && (
+              <span className="mono" style={{ fontSize: '11px', color: 'var(--color-accent)' }}>● Saving...</span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="mono" style={{ fontSize: '11px', color: 'var(--color-success)' }}>✓ Saved</span>
+            )}
+            {saveStatus === 'failed' && (
+              <span className="mono" style={{ fontSize: '11px', color: 'var(--color-danger)' }}>✕ Save failed</span>
+            )}
+
             {!isEditing ? (
               <button
                 type="button"
