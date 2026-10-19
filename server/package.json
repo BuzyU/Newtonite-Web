@@ -1,0 +1,53 @@
+{
+  "name": "newtonite-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend API and outbox worker for Newtonite Operations Platform",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "worker": "node dist/worker.js",
+    "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:test": "cross-env DATABASE_URL=postgresql://postgres@localhost:5432/newtonite_test tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "test": "vitest run --sequence.concurrent=false",
+    "lint": "eslint src tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "pg": "^8.13.3",
+    "pino": "^9.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.11",
+    "@types/supertest": "^6.0.2",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.22.0",
+    "pino-pretty": "^13.0.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0",
+    "vitest": "^3.0.8"
+  }
+}
