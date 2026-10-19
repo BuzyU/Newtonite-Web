@@ -1,0 +1,276 @@
+.appContainer {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--color-bg-app);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 240px;
+  min-width: 240px;
+  background-color: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.brand {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.brandTitle {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.brandTag {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+}
+
+.quickAction {
+  padding: var(--space-3) var(--space-4);
+}
+
+.createBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--color-accent);
+  color: var(--color-text-inverse);
+  border: 1px solid var(--color-accent);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.createBtn:hover {
+  background-color: var(--color-accent-hover);
+}
+
+.kbdHint {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  opacity: 0.8;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.navSection {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+}
+
+.navGroupTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  padding: var(--space-2) var(--space-4);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-4);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-left: 2px solid transparent;
+  transition: all 120ms ease;
+}
+
+.navItem:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.navItemActive {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-weight: 500;
+  border-left-color: var(--color-accent);
+}
+
+.sidebarFooter {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.userCard {
+  display: flex;
+  flex-direction: column;
+}
+
+.userName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.userEmail {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+}
+
+/* Main Content Area */
+.mainWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topBar {
+  height: 52px;
+  background-color: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  z-index: 5;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  width: 380px;
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  transition: border-color 120ms ease;
+}
+
+.searchBox:focus-within {
+  border-color: var(--color-border-focus);
+  background-color: var(--color-bg-surface);
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.topBarRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.realtimeBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+}
+
+.pulseDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dotLive {
+  background-color: #18794e;
+  box-shadow: 0 0 0 2px rgba(24, 121, 78, 0.2);
+}
+
+.dotReconnecting {
+  background-color: #e07d10;
+  box-shadow: 0 0 0 2px rgba(224, 125, 16, 0.2);
+}
+
+.contentArea {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+/* Cold Start Wake-up Banner */
+.wakeupBanner {
+  background-color: #fff8e6;
+  border-bottom: 1px solid #f3d48d;
+  color: #7a4f01;
+  padding: 8px 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+[data-theme='dark'] .wakeupBanner {
+  background-color: #2b220d;
+  border-bottom: 1px solid #574113;
+  color: #f7d070;
+}
+
+/* Modal Overlay */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-4);
+}
+
+.modalContent {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}

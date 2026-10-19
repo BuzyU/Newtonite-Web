@@ -1,0 +1,41 @@
+{
+  "name": "newtonite-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend for Newtonite Operations Platform",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "check:deploy": "node scripts/check-deploy.js"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.1",
+    "@fontsource/ibm-plex-sans": "^5.1.1",
+    "@tanstack/react-query": "^5.66.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.22.0",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.8"
+  }
+}
