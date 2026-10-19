@@ -11,10 +11,16 @@ const EnvSchema = z
       .default('3000')
       .transform((val) => parseInt(val, 10))
       .pipe(z.number().positive()),
-    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    NODE_ENV: z.enum(['development', 'production', 'test']).default(process.env.NODE_ENV as any || 'development'),
+    DATABASE_URL: z
+      .string()
+      .default(process.env.NODE_ENV === 'test' ? (process.env.TEST_DATABASE_URL || 'postgresql://postgres@localhost:5432/newtonite_test') : '')
+      .pipe(z.string().min(1, 'DATABASE_URL is required')),
     TEST_DATABASE_URL: z.string().optional(),
-    SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
+    SESSION_SECRET: z
+      .string()
+      .default(process.env.NODE_ENV === 'test' ? 'test_session_secret_at_least_32_characters_long_newtonite_secure' : '')
+      .pipe(z.string().min(32, 'SESSION_SECRET must be at least 32 characters long')),
     APP_ORIGIN: z.string().optional(),
     DB_POOL_MAX: z
       .string()
