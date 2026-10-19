@@ -1,0 +1,35 @@
+name: Uptime & Database Keepalive
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    name: Ping Ready Endpoint
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - name: Check APP_URL variable
+        if: env.APP_URL == ''
+        run: |
+          echo "APP_URL repository variable is not set. Skipping keepalive ping."
+          exit 0
+
+      - name: Ping /api/v1/ready
+        if: env.APP_URL != ''
+        run: |
+          echo "Pinging ${APP_URL}/api/v1/ready to prevent Render sleep and keep Supabase active..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "${APP_URL}/api/v1/ready" || echo "000")
+          echo "Response HTTP status: ${STATUS}"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "Keepalive ping succeeded."
+          else
+            echo "Warning: Keepalive ping returned status ${STATUS}."
+          fi

@@ -1,0 +1,56 @@
+name: Seed Hosted Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      items:
+        description: 'Number of work items to generate (default: 25000)'
+        required: false
+        default: '25000'
+      activity:
+        description: 'Number of activity rows to generate (default: 200000)'
+        required: false
+        default: '200000'
+      force:
+        description: 'Force seeding even if database is not empty'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    name: Run Hosted Seed
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Validate DATABASE_URL secret
+        if: env.DATABASE_URL == ''
+        run: |
+          echo "::error ::DATABASE_URL secret is not configured in production environment."
+          exit 1
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Run seed script
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          npm --prefix server run seed -- --items ${{ inputs.items }} --activity ${{ inputs.activity }} $FORCE_FLAG

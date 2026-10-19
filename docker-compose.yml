@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: newtonite-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: newtonite
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: newtonite-api
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/newtonite
+      SESSION_SECRET: local-dev-secret-at-least-32-chars-long
+      ALLOWED_ORIGIN: http://localhost:5173
+      RUN_WORKER_IN_API: "false"
+      DB_POOL_MAX: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: newtonite-worker
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/newtonite
+      DB_POOL_MAX: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: newtonite-web
+    ports:
+      - "5173:5173"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
