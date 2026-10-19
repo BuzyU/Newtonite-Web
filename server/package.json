@@ -25,7 +25,7 @@
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
+    "dotenv": "^18.0.8",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "pg": "^8.13.3",
