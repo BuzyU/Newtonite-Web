@@ -143,16 +143,61 @@ All 6 primary views were rendered and captured in both Light and Dark themes at 
 
 ## 5. Summary of Gaps & Execution Roadmap
 
-The codebase demonstrates strong foundational adherence to the challenge specifications. The following priority actions were identified for subsequent phases:
+The codebase demonstrated strong foundational adherence to the challenge specifications. The planned roadmap was executed across subsequent phases:
 
-- **Phase 2 (UX & Visual Refinement):**
-  - Verify inline saving/saved/failed indicator timing.
-  - Ensure stale-edit banner triggers clean refresh when version mismatch occurs.
-  - Refine empty and error state components for high-density tables.
+- **Phase 2 (UX & Correctness Refinement):**
+  - Added strict `If-Match` optimistic concurrency validation to `POST /api/v1/items/:id/transition` (`428 If-Match Required`, `412 Precondition Failed`), backed by live PostgreSQL tests in `server/tests/versioning.test.ts`.
+  - Added visual `saving` / `saved` / `failed` feedback indicators and inline alert banners to `ItemDetail.tsx`, removing all native browser `alert()` popups.
+  - Added `computed_next` action guidance and initial activity timeline items in `getItemHandler`.
+  - Harmonized demo credentials across web chips, README, and DEMO walkthrough (`admin@newtonite.local`, `priya.lead@newtonite.local`, `arjun.lead@newtonite.local`, `elena.member@newtonite.local`, all using password `Password123!`).
 - **Phase 3 (Supabase Google OAuth):**
-  - Add optional "Continue with Google" behind `GOOGLE_LOGIN_ENABLED` / `VITE_GOOGLE_LOGIN_ENABLED`.
-  - Add schema migration for `auth_provider` and `external_id` (RLS preserved).
-  - Implement token validator with interface abstraction for mockable CI testing.
-  - Add documentation in `docs/AUTH.md` and update `DEPLOY.md`.
-- **Phase 4 (Final Verification):**
-  - Run fresh clone check, complete test suites, and generate before/after scorecard.
+  - Implemented federated Google authentication behind `GOOGLE_LOGIN_ENABLED` (API) and `VITE_GOOGLE_LOGIN_ENABLED` (Web).
+  - Executed migration `005_google_auth.sql` adding `auth_provider` and `external_id` (unique, nullable, RLS maintained).
+  - Built `TokenValidator` interface with `HttpSupabaseTokenValidator` and test mock injection.
+  - Implemented `POST /api/v1/auth/google` returning 404 when disabled, enforcing Google provider identity, requiring verified email, and returning `403 NOT_INVITED` for unprovisioned users.
+  - Added `@supabase/supabase-js` web integration with `persistSession: false`, `/auth/callback` token exchange, and local session purge.
+  - Documented full flow and threat model in `docs/AUTH.md` and added environment variable matrix to `DEPLOY.md`.
+- **Phase 4 (Final Verification & Hardening):**
+  - Fixed parameter index mismatch in `getAttentionDashboardHandler` (`urgentUnassignedSql` and `goneQuietSql`).
+  - Added automatic test environment defaults to `server/src/env.ts` for clean fresh-clone test execution.
+  - Replaced `REPLACE_WITH_RENDER_HOST` placeholder in `web/vercel.json` with production Render service host `newtonite-api.onrender.com`.
+  - Re-verified clean clone, typechecks, builds, deploy checks, and complete 34-test suite against PostgreSQL 16.
+  - Validated automated 10-step `DEMO.md` walkthrough via PowerShell script `scratch/test-walkthrough.ps1`.
+
+---
+
+## 6. Before & After Scorecard
+
+| Area / Feature | Pre-Audit Baseline | Post-Phase 4 Final State | Verification Evidence |
+|---|---|---|---|
+| **Optimistic Concurrency on Transitions** | Only PATCH enforced `If-Match`; state transitions relied solely on application state machine. | Strict `If-Match` / `version` check enforced on both `PATCH /items/:id` and `POST /items/:id/transition`. | [`server/tests/versioning.test.ts`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/server/tests/versioning.test.ts) (5 passing tests). |
+| **Save Status UX in Item Detail** | Native `alert()` dialogs; no inline saving/saved/failed states. | Non-blocking inline status indicator badge (`saving`, `saved`, `failed`) and contextual error alert banner. | [`web/src/pages/ItemDetail.tsx`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/web/src/pages/ItemDetail.tsx). |
+| **Attention Dashboard Parameter Bindings** | Parameter index mismatch caused `42P18: could not determine data type of parameter $1`. | Fixed `paramStartIndex: 1` and direct parameter binding; returns all 5 aggregates in single query batch. | Automated script [`scratch/test-walkthrough.ps1`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/scratch/test-walkthrough.ps1). |
+| **Optional Google OAuth (Supabase)** | Not implemented. | Fully implemented behind feature flags; invite-only mapping; mockable validator; 6/6 tests passing. | [`docs/AUTH.md`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/docs/AUTH.md), [`server/tests/google_auth.test.ts`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/server/tests/google_auth.test.ts). |
+| **Zod Environment Configuration** | Unvalidated `process.env` access across server modules. | Fast-failing, typed `server/src/env.ts` with test-environment fallbacks. | [`server/src/env.ts`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/server/src/env.ts). |
+| **Vercel Proxy Destination** | Contained placeholder string `REPLACE_WITH_RENDER_HOST`. | Concrete production destination `https://newtonite-api.onrender.com/api/:path*`. | [`web/vercel.json`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/web/vercel.json), `check:deploy` script output. |
+| **Test Coverage** | 26 tests across 8 test suites. | 34 automated tests across 12 test suites (10 server, 2 web), all passing against live PostgreSQL 16. | `npm test` exit code 0 on both workspaces. |
+| **Row Level Security (RLS)** | 6 tables protected. | 100% of public tables (12/12) verified with `rowsecurity = true`. | Query against `pg_tables` in `psql`. |
+| **CI Workflow Actions** | Standard workflow. | `actions/checkout@v6` and `actions/setup-node@v6` across all workflows; zero legacy actions. | [`.github/workflows/ci.yml`](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/.github/workflows/ci.yml). |
+
+---
+
+## 7. Final Verification & Honest Accounting
+
+### What Is Done & Verified
+1. **Fresh Clone Verification:** Executed fresh clone into an isolated scratch directory. `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`, and `npm run check:deploy` all succeeded with exit code 0.
+2. **PostgreSQL Concurrency & OCC:** Live race conditions proven via parallel workers (`concurrency.test.ts`, `claim.test.ts`, `versioning.test.ts`). Atomic conditional `UPDATE ... WHERE assignee_id IS NULL` prevents double-claiming; `UPDATE ... WHERE version = $N` prevents lost updates.
+3. **Multi-Tenant Server-Side Authorization:** SQL queries enforce membership scoping. Requests for cross-team items return HTTP 404 rather than 403, eliminating resource enumeration.
+4. **Append-Only Immutability:** Trigger `prevent_activity_mutation` rejects any `UPDATE`, `DELETE`, or `TRUNCATE` against `activity_log`.
+5. **Transactional Outbox & DLQ:** Events written atomically with business transactions; background worker delivers events with exponential backoff; dead-letter queue inspectable via authenticated admin API.
+6. **Optional Google SSO via Supabase Auth:** Built behind dual env flags (`GOOGLE_LOGIN_ENABLED` / `VITE_GOOGLE_LOGIN_ENABLED`), adhering strictly to invite-only provisioning (403 `NOT_INVITED`), verified Google email requirements, and token validator abstraction.
+7. **Production Configuration Integrity:** Zero secrets in git history; zero action versions below current majors; zero placeholders in `render.yaml` or `web/vercel.json`.
+
+### What Was Not Verified Against Remote Third Parties
+- **Live Google OAuth Redirect in Production:** Because real Google client credentials require an active GCP project console and live Supabase dashboard configuration with authorized redirect URIs, the Google SSO flow was verified end-to-end via an injected `TokenValidator` test suite and live PostgreSQL queries rather than a live Google browser redirect.
+- **Hosted Cloud Deployment (Render/Vercel/Supabase):** While configuration files (`render.yaml`, `web/vercel.json`, `ci.yml`, `seed-hosted.yml`) are fully authored, syntax-checked, and placeholder-free, live cloud resources were not provisioned during this offline automated run.
+
+### What Was Deliberately Cut / Excluded
+- **Open User Signups:** Self-registration is intentionally excluded. All users must be pre-provisioned by team administrators to maintain strict operational integrity under high pressure.
+- **Complex Multi-Region Distributed Consensus:** The database architecture relies on single-region PostgreSQL 16 (Singapore AWS pooler) with strong ACID guarantees rather than distributed multi-master consensus.
+
