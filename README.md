@@ -23,18 +23,18 @@ A high-reliability, multi-tenant operational workflow platform built to handle c
 
 ---
 
-## Demo Credentials (Demo Only)
+## Demo Credentials (Local & Seeded)
 
-All demo accounts share the password: `demo-password-123` (Admin: `admin-secret-password`). 1-click login buttons are provided on the login page:
+All demo accounts share the password: `Password123!`. 1-click fill buttons are provided on the login page:
 
 | User | Email | Role Configuration | Demo Purpose |
 | :--- | :--- | :--- | :--- |
-| **Priya Patel** | `priya@newtonite.internal` | **Lead in Operations** / **Viewer in Engineering** | Demonstrates cross-team role enforcement and lead approvals. |
-| **Elena Rostova** | `elena@newtonite.internal` | **Lead in Engineering** | Demonstrates independent lead reviews and team scoping. |
-| **Sarah Chen** | `sarah@newtonite.internal` | **Lead in Support** | Demonstrates triage and queue management. |
-| **Arjun Das** | `arjun@newtonite.internal` | **Member in Operations** | Demonstrates item claiming, in-progress work, and approval submission. |
-| **Sofia Rodriguez** | `sofia@newtonite.internal` | **Member in Engineering** | Demonstrates engineering item lifecycle. |
-| **Admin User** | `admin@newtonite.internal` | **Org Administrator** | Accesses outbox dead-letter queues and organization rosters. |
+| **Alice Admin** | `admin@newtonite.local` | **Org Administrator** | Organization-wide administration, dead-letter DLQ management, and roster edits. |
+| **Priya Sharma** | `priya.lead@newtonite.local` | **Lead in Operations** / **Viewer in Engineering** | Cross-team permission enforcement, separation of duties, and lead sign-offs. |
+| **Arjun Patel** | `arjun.lead@newtonite.local` | **Lead in Engineering** | Engineering lead reviews, triage, and multi-team collaboration. |
+| **Elena Rostova** | `elena.member@newtonite.local` | **Member in Operations** | Work item claiming, in-progress updates, and approval submissions. |
+| **Sarah Jenkins** | `sarah.viewer@newtonite.local` | **Viewer in Operations** | Read-only inspection; verifying that mutating operations return 403. |
+| **Sofia Rossi** | `sofia.lead@newtonite.local` | **Lead in Payments** | Dedicated payments operations and isolation from non-member items (404). |
 
 ---
 

@@ -21,10 +21,10 @@ This script walks through the critical operational workflows, concurrency guaran
 
 ## Step 1: Authentication & Per-Team Scoping (1 Minute)
 
-1. **Browser A:** On the login screen, click the demo chip for **Priya Patel** (`priya@newtonite.internal` / `demo-password-123`).
+1. **Browser A:** On the login screen, click the demo chip for **Priya Sharma** (`priya.lead@newtonite.local` / `Password123!`).
    - Notice: Priya is **Lead in Operations** and **Viewer in Engineering**.
-2. **Browser B:** On the login screen, click the demo chip for **Elena Rostova** (`elena@newtonite.internal` / `demo-password-123`).
-   - Notice: Elena is **Lead in Engineering**.
+2. **Browser B:** On the login screen, click the demo chip for **Arjun Patel** (`arjun.lead@newtonite.local` / `Password123!`).
+   - Notice: Arjun is **Lead in Engineering**.
 3. **Verify Resource Scoping:**
    - In Browser A, click **All Work**. Filter by Team -> **Operations**. Items display normally.
    - Filter by Team -> **Engineering**. Items display with read-only controls (Priya has viewer permissions in Engineering).
@@ -95,22 +95,22 @@ Demonstrate business rules for approval and separation of duties:
    - Title: `Payment gateway settlement discrepancy`
    - Description: `Requires double sign-off from team lead before closing ledger.`
    - Check: `Requires Lead Approval before resolving`.
-   - Assignee: Assign to **Arjun Das** (Ops Member).
+   - Assignee: Assign to **Elena Rostova** (Ops Member).
 
-2. In Browser B, log in as **Arjun Das** (`arjun@newtonite.internal` / `demo-password-123`).
+2. In Browser B, log in as **Elena Rostova** (`elena.member@newtonite.local` / `Password123!`).
    - Open the item.
    - Status is `new`. Click **Mark Triaged** -> status becomes `triaged`.
    - Click **Start Progress** -> status becomes `in_progress`.
    - Click **Submit for Lead Approval** -> status becomes `awaiting_approval`.
-   - Notice: Arjun (current assignee) **cannot** approve the item. Separation of duties requires an independent lead.
+   - Notice: Elena (current assignee) **cannot** approve the item. Separation of duties requires an independent lead.
 
-3. In Browser A (Priya Patel, Ops Lead):
+3. In Browser A (Priya Sharma, Ops Lead):
    - Navigate to **My Attention**.
    - The item appears under **Awaiting Lead Approval**.
    - Click **Review**.
    - Click **Approve & Resolve**, enter note: *"Reconciled with bank statement batch 4029. Approved."*
    - Status transitions to `resolved`.
-   - Activity log captures: *"Priya Patel approved this item with note: 'Reconciled with bank statement batch 4029. Approved.'"*
+   - Activity log captures: *"Priya Sharma approved this item with note: 'Reconciled with bank statement batch 4029. Approved.'"*
 
 ---
 
