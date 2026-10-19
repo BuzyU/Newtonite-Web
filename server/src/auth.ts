@@ -3,6 +3,8 @@ import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool, logger } from './db.js';
 import { UserContext, TeamRole } from './policy.js';
+import { env } from './env.js';
+import { getTokenValidator, SupabaseUser } from './tokenValidator.js';
 
 // Extend Express Request to include user
 declare global {
@@ -375,6 +377,204 @@ export async function meHandler(req: Request, res: Response): Promise<void> {
       error: {
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to retrieve profile details.',
+        requestId: req.requestId,
+      },
+    });
+  }
+}
+
+/**
+ * Optional "Continue with Google" Handler via Supabase Auth
+ * POST /api/v1/auth/google { accessToken }
+ */
+export async function googleLoginHandler(req: Request, res: Response): Promise<void> {
+  if (!env.GOOGLE_LOGIN_ENABLED) {
+    res.status(404).json({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Google login is not enabled.',
+        requestId: req.requestId,
+      },
+    });
+    return;
+  }
+
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const rateLimitKey = `${clientIp}:google-login`;
+  const now = Date.now();
+  const rateLimitEntry = loginRateLimitMap.get(rateLimitKey);
+
+  if (rateLimitEntry) {
+    if (now < rateLimitEntry.resetAt) {
+      if (rateLimitEntry.count >= 10) {
+        const retryAfterSeconds = Math.ceil((rateLimitEntry.resetAt - now) / 1000);
+        res.setHeader('Retry-After', retryAfterSeconds.toString());
+        res.status(429).json({
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: `Too many login attempts. Please wait ${retryAfterSeconds} seconds before trying again.`,
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
+    } else {
+      loginRateLimitMap.delete(rateLimitKey);
+    }
+  }
+
+  const { accessToken } = req.body || {};
+  if (!accessToken || typeof accessToken !== 'string') {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_PAYLOAD',
+        message: 'accessToken is required.',
+        requestId: req.requestId,
+      },
+    });
+    return;
+  }
+
+  let supabaseUser: SupabaseUser;
+  try {
+    const validator = getTokenValidator();
+    supabaseUser = await validator.validate(accessToken);
+  } catch {
+    const current = loginRateLimitMap.get(rateLimitKey) || { count: 0, resetAt: now + 15 * 60 * 1000 };
+    current.count += 1;
+    loginRateLimitMap.set(rateLimitKey, current);
+
+    res.status(401).json({
+      error: {
+        code: 'INVALID_TOKEN',
+        message: 'Invalid or expired Supabase authentication token.',
+        requestId: req.requestId,
+      },
+    });
+    return;
+  }
+
+  const rawEmail = supabaseUser.email || supabaseUser.user_metadata?.email;
+  const email = rawEmail?.trim().toLowerCase();
+  const provider = supabaseUser.app_metadata?.provider || 'google';
+  const isGoogle =
+    provider === 'google' ||
+    Boolean(supabaseUser.app_metadata?.providers && supabaseUser.app_metadata.providers.includes('google'));
+  const isVerified = Boolean(
+    supabaseUser.email_confirmed_at || supabaseUser.user_metadata?.email_verified
+  );
+
+  if (!email || !isGoogle || !isVerified) {
+    res.status(403).json({
+      error: {
+        code: 'UNVERIFIED_EMAIL',
+        message: 'A present and verified Google email address is required.',
+        requestId: req.requestId,
+      },
+    });
+    return;
+  }
+
+  try {
+    // 1. Look up local users by external_id first
+    let userRes = await pool.query<{
+      id: string;
+      email: string;
+      name: string;
+      is_org_admin: boolean;
+      external_id: string | null;
+      auth_provider: string | null;
+      team_id: string | null;
+      role: TeamRole | null;
+      team_name: string | null;
+      team_slug: string | null;
+    }>(
+      `SELECT u.id, u.email, u.name, u.is_org_admin, u.external_id, u.auth_provider,
+              tm.team_id, tm.role, t.name as team_name, t.slug as team_slug
+       FROM users u
+       LEFT JOIN team_memberships tm ON tm.user_id = u.id
+       LEFT JOIN teams t ON t.id = tm.team_id
+       WHERE u.external_id = $1`,
+      [supabaseUser.id]
+    );
+
+    // 2. If not found by external_id, look up by lower(email)
+    if (userRes.rows.length === 0) {
+      userRes = await pool.query(
+        `SELECT u.id, u.email, u.name, u.is_org_admin, u.external_id, u.auth_provider,
+                tm.team_id, tm.role, t.name as team_name, t.slug as team_slug
+         FROM users u
+         LEFT JOIN team_memberships tm ON tm.user_id = u.id
+         LEFT JOIN teams t ON t.id = tm.team_id
+         WHERE LOWER(u.email) = $1`,
+        [email]
+      );
+
+      if (userRes.rows.length === 0) {
+        // Unknown email -> 403 NOT_INVITED (never auto-create accounts or memberships)
+        res.status(403).json({
+          error: {
+            code: 'NOT_INVITED',
+            message: 'Ask your team admin to add you.',
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
+
+      const matchedUser = userRes.rows[0];
+      // Check for external_id mismatch for the same email
+      if (matchedUser.external_id && matchedUser.external_id !== supabaseUser.id) {
+        res.status(403).json({
+          error: {
+            code: 'EXTERNAL_ID_MISMATCH',
+            message: 'This account is already bound to a different external identity.',
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
+
+      // On first match store auth_provider and external_id
+      await pool.query(
+        `UPDATE users SET auth_provider = 'google', external_id = $1 WHERE id = $2`,
+        [supabaseUser.id, matchedUser.id]
+      );
+    }
+
+    loginRateLimitMap.delete(rateLimitKey);
+
+    const firstRow = userRes.rows[0];
+    const token = signSession({ userId: firstRow.id, issuedAt: now });
+    res.cookie(SESSION_COOKIE_NAME, token, getCookieOptions(req));
+
+    const teamsList: Array<{ teamId: string; teamName: string; teamSlug: string; role: TeamRole }> = [];
+    for (const r of userRes.rows) {
+      if (r.team_id && r.role && r.team_name && r.team_slug) {
+        teamsList.push({
+          teamId: r.team_id,
+          teamName: r.team_name,
+          teamSlug: r.team_slug,
+          role: r.role,
+        });
+      }
+    }
+
+    res.status(200).json({
+      user: {
+        id: firstRow.id,
+        email: firstRow.email,
+        name: firstRow.name,
+        isOrgAdmin: firstRow.is_org_admin,
+        teams: teamsList,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, requestId: req.requestId }, 'Failed processing Google login');
+    res.status(500).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An error occurred during Google authentication.',
         requestId: req.requestId,
       },
     });

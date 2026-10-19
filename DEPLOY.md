@@ -16,6 +16,31 @@ Browser -> Vercel (Static Assets & Proxy /api/*) -> Render (Express API + In-Pro
 
 ---
 
+## Environment Variable Matrix
+
+The table below details where every configuration variable lives across environments and platforms, whether it contains secrets, and why it is placed there.
+
+| Variable | Target Platform | Type | Purpose & Placement Rationale |
+| :--- | :--- | :--- | :--- |
+| `NODE_ENV` | Render, Vercel, Local, CI | Plaintext | Determines execution mode (`production` vs `development` / `test`). Sets cookie security flags and logging formats. |
+| `PORT` | Render, Local | Plaintext | Port for Express HTTP listener. Render automatically supplies this; default is `3000` locally. |
+| `DATABASE_URL` | Render, GitHub Actions (`production`), Local | Secret | Connection string for PostgreSQL 16 session-mode pooler (port 5432). Required for data queries and migrations. |
+| `TEST_DATABASE_URL` | Local, GitHub Actions (CI) | Secret / Config | Connection string for isolated test database (`newtonite_test`). Never pointed at production. |
+| `SESSION_SECRET` | Render, Local, GitHub Actions (CI) | Secret | 32+ character entropy string used to sign HTTP-only session cookies with HMAC-SHA256. |
+| `APP_ORIGIN` | Render, Local | Config | Authorized CORS origin for browser requests (e.g., `https://newtonite-ops.vercel.app` or `http://localhost:5173`). |
+| `APP_URL` | GitHub Repository Variable | Config | Public frontend URL pinged by GitHub Actions keepalive cron workflow every 10 minutes to prevent cold-starts. |
+| `DB_POOL_MAX` | Render, Local | Config | Maximum pool connections per Node.js process (recommended `5` on Render free tier to stay under Supabase connection limits). |
+| `RUN_WORKER_IN_API` | Render, Local | Config | When `true`, executes the outbox polling worker in the same Node.js process as the API server. |
+| `RENDER_DEPLOY_HOOK_URL`| GitHub Secrets (`production`) | Secret | Webhook URL triggered by GitHub Actions deploy workflow to initiate automated Render rolling deploy. |
+| `GOOGLE_LOGIN_ENABLED` | Render, Local | Config | Controls server-side `POST /api/v1/auth/google`. Set to `true` to enable federated Google auth; returns 404 when `false`. |
+| `SUPABASE_URL` | Render, Local | Config | Supabase project URL (e.g. `https://xyz.supabase.co`) used by the API to verify access tokens against `/auth/v1/user`. |
+| `SUPABASE_PUBLISHABLE_KEY` | Render, Local | Public / Config | Supabase public anonymous API key sent as `apikey` header to `/auth/v1/user`. Never requires or uses `service_role` key. |
+| `VITE_GOOGLE_LOGIN_ENABLED` | Vercel, Local | Public Build-time | Controls visibility of the "Continue with Google" button on `/login`. When `false`, button is completely removed from DOM. |
+| `VITE_SUPABASE_URL` | Vercel, Local | Public Build-time | Client-side Supabase project endpoint passed to `@supabase/supabase-js` for OAuth redirection. |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Vercel, Local | Public Build-time | Client-side Supabase anon key passed to `@supabase/supabase-js`. Safe to bundle in client. |
+
+---
+
 ## Step-by-Step Deployment Procedure
 
 ### Step 1: Create Supabase Project

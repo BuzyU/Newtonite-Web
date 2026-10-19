@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { pool, logger } from './db.js';
 import {
   loginHandler,
+  googleLoginHandler,
   logoutHandler,
   meHandler,
   requireAuth,
@@ -121,6 +122,7 @@ export function createApp() {
   // Authentication Routes
   // --------------------------------------------------------------------------
   app.post('/api/v1/auth/login', csrfProtection, loginHandler);
+  app.post('/api/v1/auth/google', csrfProtection, googleLoginHandler);
   app.post('/api/v1/auth/logout', csrfProtection, logoutHandler);
   app.get('/api/v1/auth/me', requireAuth, meHandler);
 
