@@ -89,16 +89,17 @@ export async function initSseListener(): Promise<void> {
 
 /**
  * Broadcasts an event filtered strictly by the client's team membership.
- * Payload carries only ids, version, and event type.
+ * Re-checks team membership against the database on each broadcast so removed members immediately stop receiving events.
+ * Events lacking a team_id are strictly delivered only to Org Admins.
  */
-export function broadcastEvent(event: {
+export async function broadcastEvent(event: {
   id?: string;
   event_type: string;
   team_id?: string;
   item_id?: string;
   version?: number | string;
   created_at?: string;
-}): void {
+}): Promise<void> {
   const eventId = event.id || Date.now().toString();
   const data = JSON.stringify({
     type: event.event_type,
@@ -108,12 +109,46 @@ export function broadcastEvent(event: {
     timestamp: event.created_at || new Date().toISOString(),
   });
 
+  // Dynamic live DB membership verification
+  const allowedUserIds = new Set<string>();
+  if (event.team_id) {
+    const nonAdminUserIds = Array.from(
+      new Set(
+        Array.from(sseClients.values())
+          .filter((c) => !c.user.isOrgAdmin)
+          .map((c) => c.user.id)
+      )
+    );
+
+    if (nonAdminUserIds.length > 0) {
+      try {
+        const { pool } = await import('./db.js');
+        const memRes = await pool.query(
+          `SELECT user_id FROM team_memberships WHERE team_id = $1 AND user_id = ANY($2::uuid[])`,
+          [event.team_id, nonAdminUserIds]
+        );
+        for (const row of memRes.rows) {
+          allowedUserIds.add(row.user_id);
+        }
+      } catch (err) {
+        logger.error({ err, teamId: event.team_id }, 'Failed querying live team memberships during SSE broadcast');
+      }
+    }
+  }
+
   for (const [clientId, client] of sseClients.entries()) {
-    // Team scoping check: If the event has a teamId, user must belong to that team or be org admin
+    // 1. If event has team_id: user must be org admin OR currently verified in team_memberships
     if (event.team_id) {
-      const hasAccess = client.user.isOrgAdmin || client.user.memberships.has(event.team_id);
+      const hasAccess = client.user.isOrgAdmin || allowedUserIds.has(client.user.id);
       if (!hasAccess) {
-        continue; // Never leak team B events to team A users
+        client.user.memberships.delete(event.team_id);
+        continue; // Never leak events to users outside the team or recently removed
+      }
+    } else {
+      // 2. Events lacking team_id (e.g. org-wide notices or DLQ updates):
+      // Only delivered to Org Admins. Regular operators never receive unscoped events.
+      if (!client.user.isOrgAdmin) {
+        continue;
       }
     }
 
@@ -139,6 +174,30 @@ export function broadcastResync(): void {
 }
 
 /**
+ * Drop all active SSE connections for a specific user ID (e.g. when membership revoked or logged out)
+ */
+export function dropUserSseClients(userId: string): void {
+  for (const [clientId, client] of sseClients.entries()) {
+    if (client.user.id === userId) {
+      try {
+        client.res.end();
+      } catch {
+        // ignore
+      }
+      sseClients.delete(clientId);
+    }
+  }
+}
+
+export function getSseClientCount(): number {
+  return sseClients.size;
+}
+
+export function getSseClients(): Map<string, SseClient> {
+  return sseClients;
+}
+
+/**
  * Express SSE endpoint handler: /api/v1/events
  */
 export function sseHandler(req: Request, res: Response): void {
@@ -155,6 +214,12 @@ export function sseHandler(req: Request, res: Response): void {
 
   // Initial connected handshake
   res.write(`id: ${Date.now()}\nevent: connected\ndata: ${JSON.stringify({ clientId, userId: user.id })}\n\n`);
+
+  // Handle Last-Event-ID or reconnect query: emit resync so client immediately catches up
+  const lastEventId = req.headers['last-event-id'] || req.query.lastEventId;
+  if (lastEventId) {
+    res.write(`event: resync\ndata: ${JSON.stringify({ lastEventId })}\n\n`);
+  }
 
   const sseClient: SseClient = {
     id: clientId,

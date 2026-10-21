@@ -4,6 +4,7 @@ export interface ApiErrorPayload {
   details?: any;
   requestId?: string;
   current_assignee?: { id: string; name: string; email?: string };
+  currentAssignee?: { id: string; name: string; email?: string };
   current_version?: number;
   current_item?: any;
 }
@@ -57,13 +58,14 @@ function notifyWakeup(isWaking: boolean) {
 export interface RequestOptions extends RequestInit {
   idempotencyKey?: string;
   ifMatch?: string | number;
+  maxRetries?: number;
 }
 
 /**
  * Universal API fetch wrapper:
  * - Uses relative base /api/v1 (proxied by Vite in dev and Vercel in production)
  * - Attaches custom header X-Requested-With (CSRF defence)
- * - Automatically attaches Idempotency-Key on mutating requests
+ * - Generates stable Idempotency-Key per intent and reuses it across automatic retries
  * - Emits wake-up notification if request takes >3 seconds (Render free tier cold start)
  * - Parses ETag headers and error envelopes
  */
@@ -81,8 +83,10 @@ export async function apiFetch<T = any>(
   headers.set('X-Requested-With', 'XMLHttpRequest');
 
   const method = (options.method || 'GET').toUpperCase();
+  const maxRetries = options.maxRetries ?? 0;
 
   // Attach Idempotency-Key on mutating requests if not already provided
+  // Stored in headers so all automatic retries reuse the exact same key (CONC-02)
   if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
     if (!headers.has('Idempotency-Key')) {
       const generatedKey =
@@ -97,67 +101,85 @@ export async function apiFetch<T = any>(
     headers.set('If-Match', etagValue);
   }
 
-  // Start 3-second cold-start timer
-  let isWakingNotified = false;
-  const wakeupTimer = setTimeout(() => {
-    isWakingNotified = true;
-    notifyWakeup(true);
-  }, 3000);
+  let attempt = 0;
+  while (true) {
+    // Start 3-second cold-start timer
+    let isWakingNotified = false;
+    const wakeupTimer = setTimeout(() => {
+      isWakingNotified = true;
+      notifyWakeup(true);
+    }, 3000);
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include', // Include httpOnly session cookie
-    });
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers, // Reuses exact same headers and Idempotency-Key across retries
+        credentials: 'include', // Include httpOnly session cookie
+      });
 
-    clearTimeout(wakeupTimer);
-    if (isWakingNotified) {
-      notifyWakeup(false);
-    }
-
-    const responseEtag = response.headers.get('ETag') || undefined;
-
-    // Handle 204 No Content
-    if (response.status === 204) {
-      return { data: {} as T, headers: response.headers, etag: responseEtag };
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    let responseData: any;
-    if (contentType.includes('application/json')) {
-      responseData = await response.json();
-    } else {
-      responseData = await response.text();
-    }
-
-    if (!response.ok) {
-      const errorPayload: ApiErrorPayload = responseData?.error || {
-        code: `HTTP_${response.status}`,
-        message: typeof responseData === 'string' ? responseData : 'An unexpected error occurred.',
-      };
-
-      // Redirect to login on unauthenticated
-      if (response.status === 401 && !window.location.pathname.startsWith('/login')) {
-        window.location.href = `/login?redirect=${encodeURIComponent(
-          window.location.pathname + window.location.search
-        )}`;
+      clearTimeout(wakeupTimer);
+      if (isWakingNotified) {
+        notifyWakeup(false);
       }
 
-      throw new ApiError(response.status, errorPayload, response.headers);
-    }
+      // Automatically retry transient 503 (e.g. database connection timeout during cold-start)
+      if (response.status === 503 && attempt < maxRetries) {
+        attempt++;
+        await new Promise((r) => setTimeout(r, Math.min(100 * Math.pow(2, attempt), 1000)));
+        continue;
+      }
 
-    return {
-      data: responseData as T,
-      headers: response.headers,
-      etag: responseEtag,
-    };
-  } catch (err: any) {
-    clearTimeout(wakeupTimer);
-    if (isWakingNotified) {
-      notifyWakeup(false);
+      const responseEtag = response.headers.get('ETag') || undefined;
+
+      // Handle 204 No Content
+      if (response.status === 204) {
+        return { data: {} as T, headers: response.headers, etag: responseEtag };
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      let responseData: any;
+      if (contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        responseData = await response.text();
+      }
+
+      if (!response.ok) {
+        const errorPayload: ApiErrorPayload = responseData?.error || {
+          code: `HTTP_${response.status}`,
+          message: typeof responseData === 'string' ? responseData : 'An unexpected error occurred.',
+        };
+
+        // Redirect to login on unauthenticated
+        if (response.status === 401 && !window.location.pathname.startsWith('/login')) {
+          window.location.href = `/login?redirect=${encodeURIComponent(
+            window.location.pathname + window.location.search
+          )}`;
+        }
+
+        throw new ApiError(response.status, errorPayload, response.headers);
+      }
+
+      return {
+        data: responseData as T,
+        headers: response.headers,
+        etag: responseEtag,
+      };
+    } catch (err: any) {
+      clearTimeout(wakeupTimer);
+      if (isWakingNotified) {
+        notifyWakeup(false);
+      }
+
+      // If it's a network failure (fetch threw) and retries remain, retry with same key
+      if (!(err instanceof ApiError) && attempt < maxRetries) {
+        attempt++;
+        await new Promise((r) => setTimeout(r, Math.min(100 * Math.pow(2, attempt), 1000)));
+        continue;
+      }
+
+      throw err;
     }
-    throw err;
   }
 }
 

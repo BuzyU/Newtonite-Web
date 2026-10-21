@@ -28,7 +28,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/newtonite
       SESSION_SECRET: local-dev-secret-at-least-32-chars-long
-      ALLOWED_ORIGIN: http://localhost:5173
+      APP_ORIGIN: http://localhost:5173
       RUN_WORKER_IN_API: "false"
       DB_POOL_MAX: 5
     depends_on:

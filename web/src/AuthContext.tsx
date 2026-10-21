@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './api';
 
 export interface UserTeam {
@@ -34,6 +35,7 @@ export const AuthContext = createContext<AuthContextValue | undefined>(undefined
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   // Theme setup: check localStorage or prefers-color-scheme
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -88,6 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
+    // SEC-03: Synchronously purge TanStack Query cache so no previous user's data leaks
+    queryClient.clear();
     setUser(null);
     window.location.href = '/login';
   };

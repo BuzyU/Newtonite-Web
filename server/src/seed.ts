@@ -1,7 +1,8 @@
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import pg from 'pg';
 import { pool, logger } from './db.js';
 import { runMigrations } from './migrate.js';
+import { hashPassword } from './passwords.js';
 
 interface SeedOptions {
   itemCount: number;
@@ -13,6 +14,18 @@ interface SeedOptions {
 export const DEMO_PASSWORD = 'Password123!';
 
 export async function runSeed(options: SeedOptions): Promise<void> {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowHosted = process.env.ALLOW_PROD_SEED === 'true';
+  const useRandomPasswords = isProduction || process.env.SEED_RANDOM_PASSWORDS === 'true';
+
+  if (isProduction && !allowHosted) {
+    throw new Error(
+      'Refusing to run seed script in production (NODE_ENV=production). ' +
+      'Hosted seed is disabled by default to prevent credential publication. ' +
+      'Pass ALLOW_PROD_SEED=true to override, which will generate cryptographically random credentials.'
+    );
+  }
+
   const activePool = options.pool || pool;
   const client = await activePool.connect();
 
@@ -40,8 +53,8 @@ export async function runSeed(options: SeedOptions): Promise<void> {
 
     logger.info('Starting seed insertion...');
 
-    // 2. Hash demo password once
-    const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+    // 2. Hash demo password once using argon2id (same algorithm as auth.ts)
+    const passwordHash = await hashPassword(DEMO_PASSWORD);
 
     // 3. Insert Teams
     const teams = [
@@ -99,16 +112,43 @@ export async function runSeed(options: SeedOptions): Promise<void> {
     ];
 
     const userMap = new Map<string, string>(); // email -> id
+    const generatedAdminCredentials: Array<{ email: string; password: string }> = [];
+
+    // Lookup the default org once before the user loop
+    const orgRes = await client.query<{ id: string }>(
+      `SELECT id FROM organizations WHERE slug = 'newtonite-demo' LIMIT 1`
+    );
+    const defaultOrgId = orgRes.rows[0]?.id;
+    if (!defaultOrgId) {
+      throw new Error('Seed: could not find newtonite-demo org. Run migrations first.');
+    }
 
     for (const u of usersData) {
+      let finalHash = passwordHash;
+      if (useRandomPasswords) {
+        const randomPass = crypto.randomBytes(16).toString('base64url');
+        finalHash = await hashPassword(randomPass);
+        if (u.is_org_admin) {
+          generatedAdminCredentials.push({ email: u.email, password: randomPass });
+        }
+      }
+
       const res = await client.query(
-        `INSERT INTO users (email, password_hash, name, is_org_admin)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, is_org_admin = EXCLUDED.is_org_admin
+        `INSERT INTO users (email, password_hash, name, is_org_admin, org_id)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, is_org_admin = EXCLUDED.is_org_admin,
+           password_hash = EXCLUDED.password_hash, org_id = EXCLUDED.org_id
          RETURNING id, email`,
-        [u.email, passwordHash, u.name, u.is_org_admin]
+        [u.email, finalHash, u.name, u.is_org_admin, defaultOrgId]
       );
       userMap.set(u.email, res.rows[0].id);
+    }
+
+    if (useRandomPasswords && generatedAdminCredentials.length > 0) {
+      logger.warn(
+        { generatedAdminCredentials },
+        'HOSTED SEED: Initial one-time admin credentials generated. Store securely; never committed to repo.'
+      );
     }
 
     // 5. Insert Team Memberships

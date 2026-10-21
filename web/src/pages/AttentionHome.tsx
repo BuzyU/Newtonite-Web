@@ -171,7 +171,7 @@ export const AttentionHome: React.FC = () => {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                   {claimErrors[item.id] ? (
-                    <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>{claimErrors[item.id]}</span>
+                    <span role="alert" aria-live="assertive" style={{ fontSize: '12px', color: 'var(--color-danger)', fontWeight: 600 }}>{claimErrors[item.id]}</span>
                   ) : (
                     <button
                       type="button"

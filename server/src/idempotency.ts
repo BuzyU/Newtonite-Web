@@ -17,6 +17,21 @@ declare global {
 }
 
 /**
+ * Recursively canonicalizes object keys in alphabetical order so JSON serialization
+ * is deterministic regardless of key insertion order.
+ */
+export function canonicalJsonStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalJsonStringify).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map((k) => `${JSON.stringify(k)}:${canonicalJsonStringify(obj[k])}`).join(',') + '}';
+}
+
+/**
  * Middleware that validates and reserves the Idempotency-Key.
  * Uses atomic pool queries so database connections are returned to the pool immediately.
  */
@@ -47,9 +62,11 @@ export async function requireIdempotency(req: Request, res: Response, next: Next
     return;
   }
 
+  const targetPath = (req.baseUrl || '') + (req.path || '');
+  const canonicalBody = canonicalJsonStringify(req.body || {});
   const requestHash = crypto
     .createHash('sha256')
-    .update(JSON.stringify(req.body || {}))
+    .update(`${req.method}:${targetPath}:${canonicalBody}`)
     .digest('hex');
 
   try {
@@ -199,6 +216,16 @@ export async function completeIdempotency(
   body: any,
   headers?: Record<string, string>
 ): Promise<void> {
+  if (status >= 500) {
+    // CONC-01: Never cache 5xx server failures as completed idempotency records; allow clean retries
+    // Safety guard: never delete a key that has already successfully reached 'completed' status
+    await client.query(
+      `DELETE FROM idempotency_keys WHERE user_id = $1 AND key = $2 AND status != 'completed'`,
+      [userId, key]
+    );
+    return;
+  }
+
   await client.query(
     `UPDATE idempotency_keys
      SET status = 'completed',

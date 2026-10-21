@@ -8,6 +8,24 @@ dotenv.config();
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   name: 'newtonite-db',
+  redact: {
+    paths: [
+      'password',
+      'currentPassword',
+      'newPassword',
+      'temporaryPassword',
+      'authorization',
+      'cookie',
+      '*.password',
+      '*.currentPassword',
+      '*.newPassword',
+      '*.temporaryPassword',
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'generatedAdminCredentials',
+    ],
+    censor: '[REDACTED]',
+  },
 });
 
 const { Pool, Client } = pg;
@@ -74,6 +92,10 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
   statement_timeout: 15000, // 15s query timeout to prevent hangs
 });
+
+export function setPoolMax(max: number): void {
+  (pool as any).options.max = max;
+}
 
 // Critical: attach error handler so unhandled idle client error does not crash the Node process
 pool.on('error', (err) => {

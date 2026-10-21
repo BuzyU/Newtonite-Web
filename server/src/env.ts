@@ -17,10 +17,13 @@ const EnvSchema = z
       .default(process.env.NODE_ENV === 'test' ? (process.env.TEST_DATABASE_URL || 'postgresql://postgres@localhost:5432/newtonite_test') : '')
       .pipe(z.string().min(1, 'DATABASE_URL is required')),
     TEST_DATABASE_URL: z.string().optional(),
-    SESSION_SECRET: z
-      .string()
-      .default(process.env.NODE_ENV === 'test' ? 'test_session_secret_at_least_32_characters_long_newtonite_secure' : '')
-      .pipe(z.string().min(32, 'SESSION_SECRET must be at least 32 characters long')),
+    // Direct/session-pooler connection (port 5432) for migrations and advisory locks.
+    // DATABASE_URL should be the transaction pooler (port 6543) on Supabase/Vercel.
+    DATABASE_URL_DIRECT: z.string().optional(),
+    // Optional pepper mixed into the session-token hash. Sessions live in Postgres,
+    // so this is defence in depth, not the primary secret.
+    SESSION_SECRET: z.string().optional().default(''),
+    CRON_SECRET: z.string().optional(),
     APP_ORIGIN: z.string().optional(),
     DB_POOL_MAX: z
       .string()
@@ -31,32 +34,17 @@ const EnvSchema = z
       .string()
       .default('false')
       .transform((val) => val === 'true'),
+    DB_SSL_CA: z.string().optional(),
+    TRUST_PROXY: z.string().default('2'),
+    // Optional Google SSO via Supabase (disabled unless explicitly enabled)
     GOOGLE_LOGIN_ENABLED: z
       .string()
       .default('false')
       .transform((val) => val === 'true'),
     SUPABASE_URL: z.string().optional(),
     SUPABASE_PUBLISHABLE_KEY: z.string().optional(),
-    DB_SSL_CA: z.string().optional(),
   })
-  .superRefine((data, ctx) => {
-    if (data.GOOGLE_LOGIN_ENABLED) {
-      if (!data.SUPABASE_URL || data.SUPABASE_URL.trim() === '') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['SUPABASE_URL'],
-          message: 'SUPABASE_URL is required when GOOGLE_LOGIN_ENABLED is true',
-        });
-      }
-      if (!data.SUPABASE_PUBLISHABLE_KEY || data.SUPABASE_PUBLISHABLE_KEY.trim() === '') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['SUPABASE_PUBLISHABLE_KEY'],
-          message: 'SUPABASE_PUBLISHABLE_KEY is required when GOOGLE_LOGIN_ENABLED is true',
-        });
-      }
-    }
-  });
+  .passthrough();
 
 export type Env = z.infer<typeof EnvSchema>;
 

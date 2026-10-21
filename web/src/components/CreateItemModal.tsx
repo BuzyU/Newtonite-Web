@@ -111,14 +111,14 @@ export const CreateItemModal: React.FC<CreateItemModalProps> = ({ isOpen, onClos
       .filter(Boolean);
 
     createMutation.mutate({
-      team_id: teamId,
+      teamId,
       type,
       title: title.trim(),
       description: description.trim(),
       priority,
-      assignee_id: assigneeId || null,
-      due_at: dueAt ? new Date(dueAt).toISOString() : null,
-      requires_approval: requiresApproval,
+      assigneeId: assigneeId || null,
+      dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+      requiresApproval,
       tags,
     });
   };
@@ -146,6 +146,7 @@ export const CreateItemModal: React.FC<CreateItemModalProps> = ({ isOpen, onClos
                 Team *
               </label>
               <select
+                id="create-item-team-select"
                 className="input"
                 value={teamId}
                 onChange={(e) => {
@@ -183,6 +184,7 @@ export const CreateItemModal: React.FC<CreateItemModalProps> = ({ isOpen, onClos
             </label>
             <input
               type="text"
+              id="create-item-title"
               className="input"
               placeholder="e.g. Stripe webhook timeout on reconciliation"
               value={title}

@@ -31,8 +31,8 @@ BEGIN
     payload_json := json_build_object(
         'id', NEW.id,
         'event_type', NEW.event_type,
-        'team_id', NEW.payload->>'team_id',
-        'item_id', NEW.payload->>'item_id',
+        'team_id', COALESCE(NEW.payload->>'team_id', NEW.payload->>'teamId'),
+        'item_id', COALESCE(NEW.payload->>'item_id', NEW.payload->>'itemId'),
         'version', NEW.payload->>'version',
         'created_at', NEW.created_at
     );

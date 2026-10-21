@@ -136,4 +136,39 @@ describe('Versioning & Optimistic Concurrency', () => {
     expect(res.body.item.version).toBe(currentVersion + 1);
     expect(res.body.item.status).toBe('triaged');
   });
+
+  it('strict schema validation: rejects mass-assignment of version, status, or created_by with 422 VALIDATION_ERROR', async () => {
+    const client = authenticatedRequest(memberAuth);
+
+    // Attempt to inject version/status in create item
+    const createMalicious = await client
+      .post('/api/v1/items')
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        teamId: team.id,
+        type: 'operational_task',
+        title: 'Malicious mass-assignment payload',
+        description: 'Trying to inject version and status',
+        version: 999,
+        status: 'closed',
+      });
+
+    expect(createMalicious.status).toBe(422);
+    expect(createMalicious.body.error.code).toBe('VALIDATION_ERROR');
+
+    // Attempt to inject status or version in patch item
+    const patchMalicious = await client
+      .patch(`/api/v1/items/${testItemId}`)
+      .set('If-Match', `"${initialVersion + 2}"`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        title: 'Valid title',
+        status: 'closed', // status should only be changed via /transition
+        version: 50,
+      });
+
+    expect(patchMalicious.status).toBe(422);
+    expect(patchMalicious.body.error.code).toBe('VALIDATION_ERROR');
+  });
 });
+

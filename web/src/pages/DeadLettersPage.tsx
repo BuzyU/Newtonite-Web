@@ -19,25 +19,29 @@ interface DeadLetterEvent {
 export const DeadLettersPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data, isLoading, error, refetch } = useQuery<{ events: DeadLetterEvent[] }>({
+  const { data, isLoading, error, refetch } = useQuery<{ deadLetters: DeadLetterEvent[] }>({
     queryKey: ['dead-letters'],
-    queryFn: () => api.get<{ events: DeadLetterEvent[] }>('/admin/dead-letters'),
+    queryFn: () => api.get<{ deadLetters: DeadLetterEvent[] }>('/admin/dead-letters'),
   });
 
   const retryMutation = useMutation({
     mutationFn: (eventId: string) => api.post(`/admin/dead-letters/${eventId}/retry`),
-    onMutate: (id) => setRetryingId(id),
+    onMutate: (id) => {
+      setActionError(null);
+      setRetryingId(id);
+    },
     onSettled: () => {
       setRetryingId(null);
       queryClient.invalidateQueries({ queryKey: ['dead-letters'] });
     },
     onError: (err: any) => {
-      alert(err.message || 'Retry failed');
+      setActionError(err.message || 'Retry failed');
     },
   });
 
-  const events = data?.events || [];
+  const events = data?.deadLetters || [];
 
   return (
     <div style={{ maxWidth: '1040px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -54,6 +58,31 @@ export const DeadLettersPage: React.FC = () => {
           ↻ Refresh
         </button>
       </div>
+
+      {actionError && (
+        <div
+          style={{
+            padding: '8px 12px',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            borderLeft: '3px solid var(--color-danger)',
+            color: 'var(--color-danger)',
+            fontSize: '12px',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: '14px' }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div
         style={{
@@ -94,7 +123,7 @@ export const DeadLettersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {events.map((ev) => (
+              {events.map((ev: DeadLetterEvent) => (
                 <tr key={ev.id}>
                   <td>
                     <span className="mono" style={{ fontSize: '12px', fontWeight: 600 }}>

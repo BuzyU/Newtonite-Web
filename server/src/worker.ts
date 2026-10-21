@@ -246,9 +246,13 @@ export class OutboxWorker {
         // If specific users were @mentioned, notify them and simulate sending an email
         if (Array.isArray(mentionedEmails) && mentionedEmails.length > 0) {
           for (const email of mentionedEmails) {
+            // Mentions resolve ONLY inside the item's organization (no cross-tenant notifications)
             const uRes = await client.query<{ id: string; email: string; name: string }>(
-              `SELECT id, email, name FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(email) LIKE LOWER($2)`,
-              [email, `${email}%`]
+              `SELECT id, email, name FROM users
+               WHERE (LOWER(email) = LOWER($1) OR LOWER(email) LIKE LOWER($2))
+                 AND is_active = TRUE
+                 AND org_id = (SELECT org_id FROM items WHERE id = $3)`,
+              [email, `${email}%`, itemId]
             );
             if (uRes.rows.length > 0) {
               const mentionedUser = uRes.rows[0];
@@ -432,6 +436,43 @@ export class OutboxWorker {
       client.release();
     }
   }
+}
+
+/**
+ * Serverless-friendly drain: process outbox batches until the queue is empty or the time budget
+ * is spent. Safe to run concurrently from several invocations (FOR UPDATE SKIP LOCKED).
+ */
+export async function drainOutbox(maxMs = 8000, customPool?: pg.Pool): Promise<{ processed: number; batches: number }> {
+  const worker = new OutboxWorker(customPool);
+  const deadline = Date.now() + maxMs;
+  let processed = 0;
+  let batches = 0;
+  while (Date.now() < deadline) {
+    const n = await worker.processBatch();
+    if (n === 0) break;
+    processed += n;
+    batches++;
+  }
+  return { processed, batches };
+}
+
+/** Daily maintenance: SLA scan plus pruning of sessions, rate limits and the change feed. */
+export async function runMaintenance(customPool?: pg.Pool): Promise<Record<string, number>> {
+  const activePool = customPool || pool;
+  const worker = new OutboxWorker(activePool);
+  const slaNotifications = await worker.runSlaScanner();
+  const sessions = await activePool.query(
+    `DELETE FROM sessions WHERE revoked_at < NOW() - INTERVAL '7 days'
+        OR absolute_expires_at < NOW() - INTERVAL '7 days' OR expires_at < NOW() - INTERVAL '7 days'`
+  );
+  const rateLimits = await activePool.query(`DELETE FROM rate_limits WHERE window_start < NOW() - INTERVAL '2 hours'`);
+  const changeFeed = await activePool.query(`DELETE FROM change_feed WHERE created_at < NOW() - INTERVAL '1 day'`);
+  return {
+    slaNotifications,
+    sessionsPruned: sessions.rowCount ?? 0,
+    rateLimitsPruned: rateLimits.rowCount ?? 0,
+    changeFeedPruned: changeFeed.rowCount ?? 0,
+  };
 }
 
 // CLI standalone runner (for Docker or local worker process)

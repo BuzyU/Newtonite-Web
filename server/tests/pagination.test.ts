@@ -76,4 +76,26 @@ describe('Keyset Pagination: Stable iteration without duplicates or gaps', () =>
 
     expect(p2FirstTime).toBeLessThanOrEqual(p1LastTime);
   });
+
+  it('search input safety: handles malformed tsquery input without 500 error', async () => {
+    const client = authenticatedRequest(memberAuth);
+
+    const maliciousQueries = [
+      'foo &',
+      'foo | bar !',
+      '"unclosed quote',
+      ':::***',
+      '((((()))))',
+      '! & | <->',
+      'DROP TABLE items;--',
+      "'; SELECT 1; --",
+    ];
+
+    for (const q of maliciousQueries) {
+      const res = await client.get(`/api/v1/items?search=${encodeURIComponent(q)}`);
+      expect(res.status).toBe(200);
+      expect(res.body.items).toBeDefined();
+    }
+  });
 });
+

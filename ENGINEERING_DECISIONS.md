@@ -36,6 +36,8 @@ This document records the foundational architecture and engineering trade-offs m
   1. *Blind retries:* Mutating endpoints re-execute on every POST.
   2. *Two-phase key reservation:* The server inserts an `idempotency_keys` record first (`status = 'in_progress'`, request hash). If a duplicate request arrives while running, it gets 409 `REQUEST_IN_PROGRESS`. If replayed after completion, it returns the cached response. If the payload differs, it returns 422.
 - **Decision:** Two-phase idempotency key reservation table in PostgreSQL.
+- **Request Hash:** `requestHash = SHA256(userId + method + targetPath + body)`. Reusing the same key on a different route or with altered parameters is rejected with `422 IDEMPOTENCY_KEY_REUSE_MISMATCH`.
+- **5xx Safety:** If an unhandled internal error occurs (status >= 500), the idempotency record is automatically deleted (`completeIdempotency`), allowing the client to safely retry rather than permanently caching a transient failure.
 - **Trade-offs:** Adds one write on mutating operations. In exchange, guaranteed exactly-once mutations, safe browser retries, and protection against accidental double submissions.
 - **What changes at 10x:** Offload short-lived idempotency tokens (10 minutes) to a distributed Redis cache, persisting only completed business results in PostgreSQL.
 
@@ -49,6 +51,7 @@ This document records the foundational architecture and engineering trade-offs m
   2. *External Message Broker (RabbitMQ / Kafka / Redis Streams):* Requires running, securing, and maintaining external stateful infrastructure.
   3. *Transactional Outbox in PostgreSQL:* Events written in the same transaction as the item change. An asynchronous worker claims batches using `SELECT ... FOR UPDATE SKIP LOCKED`.
 - **Decision:** Transactional outbox table with `SKIP LOCKED`, lease expirations, and idempotent handlers (`dedupe_key`).
+- **Multi-Worker Safety:** Verified via test `outbox.test.ts`. Multiple concurrent worker instances partition pending batches seamlessly without double-processing or lock waits. Expired leases left by crashed workers are reclaimed automatically.
 - **Trade-offs:** Worker polls database every second when active. In exchange, 100% transactional consistency (zero dual-write bugs), no external infrastructure dependencies, and automatic crash recovery via worker leases.
 - **What changes at 10x:** Scale horizontally with multiple worker instances or transition to Debezium CDC from PostgreSQL WAL.
 
@@ -60,7 +63,7 @@ This document records the foundational architecture and engineering trade-offs m
 - **Options Considered:**
   1. *`OFFSET / LIMIT` pagination:* Simple to write, but severely degrades as offset grows (scans and discards $O(N)$ rows).
   2. *Keyset cursor pagination with composite indexes:* Order by `(last_activity_at DESC, id DESC)`. Next page queries `WHERE (last_activity_at, id) < ($1, $2)`.
-- **Decision:** Keyset pagination everywhere. Composite B-tree indexes for list filtering, GIN index on generated `tsvector` for keyword search, and `pg_trgm` trigram index for partial ref/title matching.
+- **Decision:** Keyset pagination everywhere. Composite B-tree indexes for list filtering, GIN index on generated `tsvector` for keyword search, and `pg_trgm` trigram index for partial ref/title matching. Search uses `websearch_to_tsquery('english', $1)` to safely parse arbitrary user punctuation without throwing 500 errors.
 - **Trade-offs:** Cannot jump directly to arbitrary page numbers (e.g. "Page 45"), which is rarely needed in operational triage queues. In exchange, constant-time page loads ($O(1)$) regardless of queue depth.
 - **What changes at 10x:** Partition `activity_log` by date range; offload search to OpenSearch.
 
@@ -80,3 +83,5 @@ This document records the foundational architecture and engineering trade-offs m
 1. **In-Process Worker on Render Free Tier:** Render's free tier supports a single web service. Running the outbox worker loop inside the Express API (`RUN_WORKER_IN_API=true`) allows full asynchronous outbox processing without requiring paid worker services.
 2. **Render Cold Starts:** The free plan spins down after 15 minutes of idle time. The frontend handles this gracefully by detecting delayed responses (>3s), displaying an informative wake-up banner, and retrying automatically.
 3. **Supabase Session-Mode Pooler (Port 5432):** We connect via port 5432 (session mode) rather than port 6543 (transaction mode) because advisory migration locks and `LISTEN/NOTIFY` require session-scoped connections.
+4. **Connection Pool vs. Concurrency Claims:** The 50-parallel claim test fires 50 HTTP requests concurrently. In node-postgres, these pipeline through `DB_POOL_MAX` (default 5 or 20). Mutual exclusion is guaranteed at the database engine level by atomic conditional SQL (`UPDATE items SET assignee_id = $1 ... WHERE assignee_id IS NULL`), not by pool size. Even if all 50 executed on 50 distinct connections at the same nanosecond, exactly 1 row will ever match `assignee_id IS NULL`.
+

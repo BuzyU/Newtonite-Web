@@ -29,7 +29,8 @@ The table below details where every configuration variable lives across environm
 | `SESSION_SECRET` | Render, Local, GitHub Actions (CI) | Secret | 32+ character entropy string used to sign HTTP-only session cookies with HMAC-SHA256. |
 | `APP_ORIGIN` | Render, Local | Config | Authorized CORS origin for browser requests (e.g., `https://newtonite-ops.vercel.app` or `http://localhost:5173`). |
 | `APP_URL` | GitHub Repository Variable | Config | Public frontend URL pinged by GitHub Actions keepalive cron workflow every 10 minutes to prevent cold-starts. |
-| `DB_POOL_MAX` | Render, Local | Config | Maximum pool connections per Node.js process (recommended `5` on Render free tier to stay under Supabase connection limits). |
+| `DB_POOL_MAX` | Render, Local | Config | Maximum pool connections per Node.js process (defaults to `20`; recommended `5` on Render free tier to stay under Supabase direct connection limits; configured to `50` in concurrency test so 50 requests truly race). |
+| `TRUST_PROXY` | Render, Local | Config | Express trust proxy hop count (default `'2'`). Matches Vercel Edge (Hop 1) -> Render Proxy (Hop 2) -> Node.js, ensuring genuine client IP resolution for rate limiting. |
 | `RUN_WORKER_IN_API` | Render, Local | Config | When `true`, executes the outbox polling worker in the same Node.js process as the API server. |
 | `RENDER_DEPLOY_HOOK_URL`| GitHub Secrets (`production`) | Secret | Webhook URL triggered by GitHub Actions deploy workflow to initiate automated Render rolling deploy. |
 | `GOOGLE_LOGIN_ENABLED` | Render, Local | Config | Controls server-side `POST /api/v1/auth/google`. Set to `true` to enable federated Google auth; returns 404 when `false`. |
@@ -69,9 +70,16 @@ In your GitHub repository, navigate to **Settings -> Secrets and variables -> Ac
 ---
 
 ### Step 3: Run Database Migrations & Seed Data
-1. In your GitHub repository, navigate to the **Actions** tab.
-2. Trigger the automated migration by pushing to `main` (or run manually via `npm run migrate` with `DATABASE_URL`).
-3. Under Actions, select **Seed Hosted Database** -> click **Run workflow**:
+1. Migrations run automatically on startup or manually via `npm run migrate`. The migration runner acquires an advisory lock (`78291048123847192`) and executes in strict numerical sequence:
+   - `001_initial_schema.sql`
+   - `002_indexes_and_views.sql`
+   - `003_triggers_and_immutability.sql`
+   - `004_rls_and_permissions.sql`
+   - `005_google_auth.sql`
+2. **Hosted Seed Security:**
+   - In production (`NODE_ENV=production`), `npm run seed` will abort unless `ALLOW_PROD_SEED=true` is set.
+   - When seeded in production, it generates **cryptographically secure random 24-character passwords** and logs them once to stdout. Working default admin passwords are never published or reused on deployed instances.
+3. In GitHub Actions, you can trigger the **Seed Hosted Database** workflow:
    - **Items:** `25000` (hosted default)
    - **Activity:** `200000`
    - **Force:** `false`

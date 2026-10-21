@@ -12,7 +12,8 @@ A high-reliability, multi-tenant operational workflow platform built to handle c
 | **Setup & Run Instructions** | [README.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/README.md) & [DEPLOY.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/DEPLOY.md) | One-command Docker run, zero-Docker local run, and step-by-step production deployment. |
 | **Engineering Decisions** | [ENGINEERING_DECISIONS.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/ENGINEERING_DECISIONS.md) | Architectural trade-offs, SQL scoping, OCC, transactional outbox, and what was intentionally not built. |
 | **Automated Tests** | [/server/tests](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/server/tests), [/web/tests](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/web/tests), [.github/workflows/ci.yml](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/.github/workflows/ci.yml) | 11 comprehensive suites testing concurrency, OCC, idempotency, state transitions, outbox, and RLS. |
-| **Known Limitations** | [KNOWN_LIMITATIONS.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/KNOWN_LIMITATIONS.md) | Truthful evaluation of hosting cold-starts, worker topology, and sequential numbering trade-offs. |
+| **Submission Checklist** | [SUBMISSION.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/SUBMISSION.md) & [docs/LIVE_REVIEW_CHEAT_SHEET.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/docs/LIVE_REVIEW_CHEAT_SHEET.md) | Technical defense cheat sheet with crisp answers, citations, and verified test proofs. |
+| **Known Limitations** | [KNOWN_LIMITATIONS.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/KNOWN_LIMITATIONS.md) | Truthful evaluation of hosting cold-starts, worker topology, trust proxy hops, and in-memory rate limiting. |
 | **Live Deployment URL** | *Not provided yet* | Deployable via [DEPLOY.md](file:///c:/Users/umerz/OneDrive/Desktop/Newtonion/Web/DEPLOY.md) to Supabase + Render + Vercel. |
 
 ---
@@ -25,7 +26,7 @@ A high-reliability, multi-tenant operational workflow platform built to handle c
 
 ## Demo Credentials (Local & Seeded)
 
-All demo accounts share the password: `Password123!`. 1-click fill buttons are provided on the login page:
+All demo accounts share the password: `Password123!`. 1-click fill buttons are provided on the login page (available in development or when `VITE_ENABLE_DEMO_LOGIN=true`):
 
 | User | Email | Role Configuration | Demo Purpose |
 | :--- | :--- | :--- | :--- |
@@ -66,7 +67,7 @@ docker compose up --build
 
 2. **Run Migrations & Seed Data:**
    ```bash
-   # Run advisory-locked database migrations
+   # Run advisory-locked database migrations (001-005)
    npm run migrate
 
    # Seed 1,000 items and 5,000 activity rows for local development
@@ -87,25 +88,32 @@ docker compose up --build
 All tests run against a **real PostgreSQL 16 database** (no database mocks).
 
 ```bash
-# Run both backend (Supertest + pg) and frontend (RTL) tests
+# Run both backend (Supertest + pg) and frontend (Vitest + RTL) tests
 npm test
 
 # Run code style and syntax linters
 npm run lint
 ```
 
-### Verified Test Suites:
-1. `concurrency.test.ts`: 50 concurrent claims on one item -> exactly 1 winner (200), 49 losers (409 `ALREADY_CLAIMED`).
-2. `versioning.test.ts`: Missing `If-Match` returns 428; stale version returns 412 with server item; matching version increments `version`.
-3. `idempotency.test.ts`: Idempotent replays return cached responses; concurrent identical requests handle gracefully; mismatched payloads return 422.
+### Verified Test Suites (18 suites passing against real PostgreSQL 16):
+1. `concurrency.test.ts`: 50 concurrent claims on one item with `DB_POOL_MAX=50` -> exactly 1 winner (200), 49 losers (409 `ALREADY_CLAIMED`), 1 activity log entry.
+2. `versioning.test.ts`: Missing `If-Match` returns 428; stale version returns 412 with server item; matching version increments `version`; strict Zod schema validation rejects mass-assignment (422).
+3. `idempotency.test.ts`: Two-phase reservation; per-user scoping (`PRIMARY KEY (user_id, idempotency_key)`); canonical JSON key sorting; replayed requests return cached response; mismatched route/body returns 422; 5xx errors do not cache or delete committed effects.
 4. `authorization.test.ts`: Other-team items return 404 (never 403); cross-team role scoping (Priya Lead in Ops vs Viewer in Eng).
 5. `transitions.test.ts`: Comprehensive state machine transitions, resolution notes required, separation of duties in lead approvals.
-6. `outbox.test.ts`: Transactional outbox polling, lease expiration reclamation, exponential backoff, dead-letter transition, deduplication.
-7. `activity_log.test.ts`: Transaction rollback atomicity; immutability trigger blocks UPDATE, DELETE, and TRUNCATE.
-8. `pagination.test.ts`: Keyset pagination has zero duplicates and zero skipped rows across concurrent inserts.
-9. `rls.test.ts`: Verifies Row Level Security is enabled on every table in schema `public`.
-10. `stale-edit.test.tsx`: Client stale-edit conflict panel displays diff and offers re-apply.
-11. `optimistic-rollback.test.tsx`: Client handles 409 claim race gracefully and displays winner's name.
+6. `approve_reject.test.ts`: Proves approve/reject/reopen enforce: role, creator != approver, If-Match, idempotency, activity row, outbox event.
+7. `outbox.test.ts`: Transactional outbox polling, lease expiration reclamation, exponential backoff, dead-letter transition, deduplication, and multi-worker concurrent partitioning via `FOR UPDATE SKIP LOCKED` (asserts total completed == N with no duplicates).
+8. `activity_log.test.ts`: Transaction rollback atomicity; immutability trigger blocks UPDATE, DELETE, and TRUNCATE.
+9. `pagination.test.ts`: Keyset pagination has zero duplicates and zero skipped rows across concurrent inserts; search input safety with malformed tsquery syntax.
+10. `rls.test.ts`: Verifies Row Level Security is enabled on every table in schema `public`.
+11. `firebase_auth.test.ts`: Verifies unauthenticated login endpoint is eradicated (returns 404 `ROUTE_NOT_FOUND`).
+12. `google_auth.test.ts`: Verifies Google OAuth token validation: signature, issuer, audience, expiry, `email_verified`, and no auto-linking on unverified emails.
+13. `sse.test.ts`: Dynamic membership re-check on every broadcast, unscoped events restricted to Org Admin, `Last-Event-ID` missed event resync, and client connection teardown on team removal.
+14. `rate_limit.test.ts`: Login brute-force rate limit (429 with `Retry-After`) and mutating write rate limiter.
+15. `frontend_contract.test.ts`: Contract tests hitting all frontend API endpoints with canonical JSON shapes.
+16. `stale-edit.test.tsx` (frontend): Client stale-edit conflict panel displays diff and offers re-apply.
+17. `optimistic-rollback.test.tsx` (frontend): Client handles 409 claim race gracefully and displays winner's name.
+18. `idempotency-client.test.tsx` (frontend): Client generates 1 key per user intent, reuses on auto-retry, creates fresh key on new intent, and provides double-click protection.
 
 ---
 

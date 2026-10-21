@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import crypto from 'crypto';
-import { pool } from '../src/db.js';
+import { pool, setPoolMax } from '../src/db.js';
 import { loginAs, authenticatedRequest, getTeamBySlug, AuthContext } from './helpers.js';
 
 describe('Concurrency: 50 concurrent claims on a single item', () => {
@@ -9,6 +9,11 @@ describe('Concurrency: 50 concurrent claims on a single item', () => {
   let testItemId: string;
 
   beforeAll(async () => {
+    // Explicitly configure DB connection pool to 50 so all 50 requests execute concurrently against the database
+    process.env.DB_POOL_MAX = '50';
+    setPoolMax(50);
+    expect((pool as any).options.max).toBe(50);
+
     memberAuth = await loginAs('elena.member@newtonite.local');
     team = await getTeamBySlug('operations');
 

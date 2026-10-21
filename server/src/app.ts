@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { pool, logger } from './db.js';
+import { env } from './env.js';
 import {
   loginHandler,
   googleLoginHandler,
@@ -19,6 +20,9 @@ import {
   claimItemHandler,
   updateItemHandler,
   transitionItemHandler,
+  approveItemHandler,
+  rejectItemHandler,
+  reopenItemHandler,
   getItemActivityHandler,
   addCommentHandler,
   getItemCommentsHandler,
@@ -28,17 +32,23 @@ import { requireIdempotency } from './idempotency.js';
 import { sseHandler } from './sse.js';
 import {
   listTeamsHandler,
+  getTeamHandler,
   listTeamMembersHandler,
   listDeadLettersHandler,
   retryDeadLetterHandler,
 } from './teams.js';
+import { writeRateLimiter } from './rateLimit.js';
 
 export function createApp() {
   const app = express();
 
-  // Set trust proxy: Render sits behind Vercel edge reverse proxy
-  // 'loopback, linklocal, uniquelocal' or hop count 2
-  app.set('trust proxy', 2);
+  // Set trust proxy: configurable via TRUST_PROXY env variable (default: 2 hops for Client -> Vercel Edge -> Render API)
+  const trustProxyEnv = env.TRUST_PROXY || process.env.TRUST_PROXY || '2';
+  let trustProxyVal: boolean | number | string = trustProxyEnv;
+  if (trustProxyEnv === 'true') trustProxyVal = true;
+  else if (trustProxyEnv === 'false') trustProxyVal = false;
+  else if (/^\d+$/.test(trustProxyEnv)) trustProxyVal = parseInt(trustProxyEnv, 10);
+  app.set('trust proxy', trustProxyVal);
 
   // 1. Security Headers via Helmet
   app.use(
@@ -94,6 +104,9 @@ export function createApp() {
     next();
   });
 
+  // 5. Mutating Write Rate Limiter
+  app.use(writeRateLimiter);
+
   // --------------------------------------------------------------------------
   // Health & Readiness Endpoints (Unauthenticated, no CSRF)
   // --------------------------------------------------------------------------
@@ -135,11 +148,13 @@ export function createApp() {
   // Teams & Members
   // --------------------------------------------------------------------------
   app.get('/api/v1/teams', requireAuth, listTeamsHandler);
+  app.get('/api/v1/teams/:id', requireAuth, getTeamHandler);
   app.get('/api/v1/teams/:id/members', requireAuth, listTeamMembersHandler);
 
   // --------------------------------------------------------------------------
   // Items API
   // --------------------------------------------------------------------------
+  app.get('/api/v1/attention', requireAuth, getAttentionDashboardHandler);
   app.get('/api/v1/dashboard/attention', requireAuth, getAttentionDashboardHandler);
   app.get('/api/v1/items', requireAuth, listItemsHandler);
   app.get('/api/v1/items/:id', requireAuth, getItemHandler);
@@ -149,6 +164,9 @@ export function createApp() {
   app.post('/api/v1/items/:id/claim', requireAuth, csrfProtection, requireIdempotency, claimItemHandler);
   app.patch('/api/v1/items/:id', requireAuth, csrfProtection, requireIdempotency, updateItemHandler);
   app.post('/api/v1/items/:id/transition', requireAuth, csrfProtection, requireIdempotency, transitionItemHandler);
+  app.post('/api/v1/items/:id/approve', requireAuth, csrfProtection, requireIdempotency, approveItemHandler);
+  app.post('/api/v1/items/:id/reject', requireAuth, csrfProtection, requireIdempotency, rejectItemHandler);
+  app.post('/api/v1/items/:id/reopen', requireAuth, csrfProtection, requireIdempotency, reopenItemHandler);
 
   // Comments
   app.get('/api/v1/items/:id/comments', requireAuth, getItemCommentsHandler);

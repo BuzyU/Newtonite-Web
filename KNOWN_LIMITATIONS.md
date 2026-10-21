@@ -28,6 +28,13 @@ This document provides a truthful and honest accounting of architectural trade-o
 - **Limitation:** When connecting to hosted Supabase PostgreSQL without providing the custom Supabase root certificate via `DB_SSL_CA`, the client uses TLS encryption with `rejectUnauthorized: false`.
 - **Production Path:** Provide the official Supabase root CA certificate file in production and set `DB_SSL_CA=/etc/secrets/prod-ca.crt`.
 
+### 1.6 Configurable Trust Proxy Hop Count & In-Memory Rate Limiting
+- **Trust Proxy Configuration:** Express uses `TRUST_PROXY` (default: `2`). This models the standard production deployment topology: `Client -> Vercel Edge CDN / Proxy (Hop 1) -> Render Reverse Proxy (Hop 2) -> Node.js Express API`. Using an explicit numeric hop count ensures Express picks the genuine client IP from the end of the `X-Forwarded-For` chain while preventing client-forged upstream headers from spoofing client identity. If running behind a single proxy (e.g. local Nginx), set `TRUST_PROXY=1`.
+- **In-Memory Rate Limiter:** The mutation rate limiter (`writeRateLimiter`, 120 writes/min) and authentication rate limiter (`loginRateLimitMap`, 5 attempts/15min) use in-process `Map` stores.
+  - *Limitation 1 (Process Restarts):* When the Node.js container restarts or cold-starts on Render free-tier, in-memory rate limit counters reset.
+  - *Limitation 2 (Horizontal Scaling):* When scaling across multiple API containers behind a load balancer, rate limits are tracked per-container rather than globally across the fleet.
+  - *Production Path:* For multi-instance high-availability deployments, replace the in-memory maps with a shared distributed cache (Redis or Valkey via Upstash/ElastiCache) using sliding window rate limiting.
+
 ---
 
 ## 2. Functional & Architecture Boundaries

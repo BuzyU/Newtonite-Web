@@ -36,8 +36,15 @@
 
   --color-text-primary: #171a1c;
   --color-text-secondary: #525a65;
-  --color-text-muted: #79828d;
+  --color-text-muted: #5e6875; /* WCAG AA: 4.8:1 on #ffffff */
   --color-text-inverse: #ffffff;
+
+  /* Alert & Warning Tokens */
+  --color-warning-bg: #fff8e6;
+  --color-warning-border: #f3d48d;
+  --color-warning-text: #7a4f01;
+  --color-danger: #c52707;
+  --color-danger-bg: rgba(197, 39, 7, 0.08);
 
   /* Single Restrained Accent: Deep Ink Teal */
   --color-accent: #155d88;
@@ -58,7 +65,7 @@
   --prio-urgent: #c52707;
   --prio-high: #b25e00;
   --prio-medium: #486581;
-  --prio-low: #79828d;
+  --prio-low: #5e6875;
 }
 
 /* Dark Theme Palette */
@@ -75,8 +82,15 @@
 
   --color-text-primary: #ededed;
   --color-text-secondary: #a0a8b2;
-  --color-text-muted: #6e7682;
+  --color-text-muted: #8c96a4; /* WCAG AA: 5.7:1 on #181b1f */
   --color-text-inverse: #101214;
+
+  /* Dark Alert & Warning Tokens */
+  --color-warning-bg: #2d2412;
+  --color-warning-border: #543f14;
+  --color-warning-text: #f5c451;
+  --color-danger: #eb442c;
+  --color-danger-bg: rgba(235, 68, 44, 0.15);
 
   --color-accent: #338cc2;
   --color-accent-hover: #4ea5db;
@@ -94,7 +108,7 @@
   --prio-urgent: #eb442c;
   --prio-high: #e07d10;
   --prio-medium: #829ab1;
-  --prio-low: #626d7a;
+  --prio-low: #8c96a4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -111,8 +125,14 @@
 
     --color-text-primary: #ededed;
     --color-text-secondary: #a0a8b2;
-    --color-text-muted: #6e7682;
+    --color-text-muted: #8c96a4;
     --color-text-inverse: #101214;
+
+    --color-warning-bg: #2d2412;
+    --color-warning-border: #543f14;
+    --color-warning-text: #f5c451;
+    --color-danger: #eb442c;
+    --color-danger-bg: rgba(235, 68, 44, 0.15);
 
     --color-accent: #338cc2;
     --color-accent-hover: #4ea5db;
@@ -130,7 +150,7 @@
     --prio-urgent: #eb442c;
     --prio-high: #e07d10;
     --prio-medium: #829ab1;
-    --prio-low: #626d7a;
+    --prio-low: #8c96a4;
   }
 }
 
@@ -143,7 +163,7 @@
 html, body {
   height: 100%;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--color-text-primary);
   background-color: var(--color-bg-app);

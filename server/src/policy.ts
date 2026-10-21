@@ -6,6 +6,11 @@ export interface UserContext {
   name: string;
   isOrgAdmin: boolean;
   memberships: Map<string, TeamRole>; // team_id -> role
+  orgId: string;
+  orgName?: string;
+  orgSlug?: string;
+  mustChangePassword?: boolean;
+  sessionId?: string;
 }
 
 export type ActionType =

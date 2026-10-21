@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './AuthContext';
 
@@ -15,12 +15,14 @@ export function useRealtime(): RealtimeState {
 
   const [isConnected, setIsConnected] = useState(false);
   const [isPollingFallback, setIsPollingFallback] = useState(false);
-  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+  const [status, setStatus] = useState<RealtimeState['status']>('disconnected');
+  const failureCountRef = useRef(0);
 
   useEffect(() => {
     if (!user) {
       setIsConnected(false);
       setIsPollingFallback(false);
+      setStatus('disconnected');
       return;
     }
 
@@ -39,7 +41,8 @@ export function useRealtime(): RealtimeState {
           if (!isMounted) return;
           setIsConnected(true);
           setIsPollingFallback(false);
-          setConsecutiveFailures(0);
+          setStatus('live');
+          failureCountRef.current = 0;
           if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
@@ -49,7 +52,6 @@ export function useRealtime(): RealtimeState {
         eventSource.addEventListener('item_update', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data);
-            // Invalidate item list queries and attention dashboard
             queryClient.invalidateQueries({ queryKey: ['items'] });
             queryClient.invalidateQueries({ queryKey: ['attention'] });
             if (data.itemId) {
@@ -63,7 +65,6 @@ export function useRealtime(): RealtimeState {
         });
 
         eventSource.addEventListener('resync', () => {
-          // Broad resync requested by server (e.g. after LISTEN client reconnected)
           queryClient.invalidateQueries({ queryKey: ['items'] });
           queryClient.invalidateQueries({ queryKey: ['attention'] });
         });
@@ -74,25 +75,27 @@ export function useRealtime(): RealtimeState {
           eventSource?.close();
           eventSource = null;
 
-          setConsecutiveFailures((prev) => {
-            const next = prev + 1;
-            // After 2 consecutive failures, activate 15s polling fallback
-            if (next >= 2 && !pollInterval) {
-              setIsPollingFallback(true);
-              pollInterval = setInterval(() => {
-                queryClient.invalidateQueries({ queryKey: ['items'] });
-                queryClient.invalidateQueries({ queryKey: ['attention'] });
-              }, 15000);
-            }
-            return next;
-          });
+          failureCountRef.current += 1;
+          const fails = failureCountRef.current;
 
-          // Schedule reconnection attempt with backoff
-          const delay = Math.min(2000 * Math.pow(1.5, consecutiveFailures), 30000);
+          if (fails >= 2 && !pollInterval) {
+            setIsPollingFallback(true);
+            setStatus('polling');
+            pollInterval = setInterval(() => {
+              queryClient.invalidateQueries({ queryKey: ['items'] });
+              queryClient.invalidateQueries({ queryKey: ['attention'] });
+            }, 15000);
+          } else {
+            setStatus('reconnecting');
+          }
+
+          // Backoff calculation using stable ref
+          const delay = Math.min(2000 * Math.pow(1.5, Math.min(fails, 6)), 30000);
           reconnectTimeout = setTimeout(connectSse, delay);
         };
       } catch {
         setIsConnected(false);
+        setStatus('disconnected');
       }
     }
 
@@ -104,21 +107,12 @@ export function useRealtime(): RealtimeState {
       if (pollInterval) clearInterval(pollInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [user, queryClient, consecutiveFailures]);
-
-  let statusText: RealtimeState['statusText'] = 'disconnected';
-  if (isConnected) {
-    statusText = 'live';
-  } else if (isPollingFallback) {
-    statusText = 'polling';
-  } else if (consecutiveFailures > 0) {
-    statusText = 'reconnecting';
-  }
+  }, [user, queryClient]);
 
   return {
     isConnected,
     isPollingFallback,
-    status: statusText,
-    statusText,
+    status,
+    statusText: status,
   };
 }

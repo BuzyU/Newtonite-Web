@@ -18,7 +18,7 @@ console.log('====================================================\n');
 function runProcess(prefix, prefixColor, args, cwd) {
   const child = spawn(npmCmd, args, {
     cwd,
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
     shell: isWindows,
   });
 

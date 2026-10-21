@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api';
@@ -79,6 +79,7 @@ export const ItemDetail: React.FC = () => {
     noteRequired: boolean;
   } | null>(null);
   const [actionNote, setActionNote] = useState('');
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Stale version conflict state (412 STALE_VERSION)
   const [staleConflict, setStaleConflict] = useState<{
@@ -89,6 +90,7 @@ export const ItemDetail: React.FC = () => {
 
   // Claim error state (409 ALREADY_CLAIMED)
   const [claimError, setClaimError] = useState<string | null>(null);
+  const isClaimingRef = useRef(false);
 
   // Saving / saved / failed feedback state
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
@@ -171,7 +173,7 @@ export const ItemDetail: React.FC = () => {
     },
     onError: (err: any) => {
       if (err instanceof ApiError && err.code === 'ALREADY_CLAIMED') {
-        const owner = err.details?.current_assignee?.name || 'another team member';
+        const owner = err.error?.current_assignee?.name || err.error?.currentAssignee?.name || err.details?.current_assignee?.name || 'another team member';
         setClaimError(`Already claimed by ${owner}.`);
       } else {
         setClaimError(err.message || 'Claim failed');
@@ -293,9 +295,12 @@ export const ItemDetail: React.FC = () => {
       {/* Inline Action Error Banner */}
       {actionError && (
         <div
+          role="alert"
+          aria-live="assertive"
+          id="item-action-error-banner"
           style={{
             padding: '10px 14px',
-            backgroundColor: 'rgba(219, 43, 43, 0.08)',
+            backgroundColor: 'var(--color-danger-bg)',
             border: '1px solid var(--color-danger)',
             borderRadius: 'var(--radius-sm)',
             color: 'var(--color-danger)',
@@ -321,12 +326,14 @@ export const ItemDetail: React.FC = () => {
       {staleConflict && (
         <div
           id="stale-conflict-panel"
+          role="alert"
+          aria-live="assertive"
           style={{
-            backgroundColor: '#fff8e6',
-            border: '1px solid #f3d48d',
+            backgroundColor: 'var(--color-warning-bg)',
+            border: '1px solid var(--color-warning-border)',
             borderRadius: 'var(--radius-md)',
             padding: 'var(--space-4)',
-            color: '#7a4f01',
+            color: 'var(--color-warning-text)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -533,26 +540,58 @@ export const ItemDetail: React.FC = () => {
             )}
           </div>
 
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {claimError && (
+              <span role="alert" aria-live="assertive" id="claim-error-text" style={{ fontSize: '12px', color: 'var(--color-danger)', fontWeight: 600 }}>{claimError}</span>
+            )}
             {!item.assignee_id && item.status !== 'closed' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {claimError && (
-                  <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>{claimError}</span>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  id="claim-action-btn"
-                  onClick={() => claimMutation.mutate()}
-                  disabled={claimMutation.isPending}
-                  style={{ fontSize: '12px' }}
-                >
-                  {claimMutation.isPending ? 'Claiming...' : 'Claim This Item'}
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                id="claim-action-btn"
+                onClick={() => {
+                  if (claimMutation.isPending || isClaimingRef.current) return;
+                  isClaimingRef.current = true;
+                  claimMutation.mutate(undefined, {
+                    onSettled: () => {
+                      isClaimingRef.current = false;
+                    },
+                  });
+                }}
+                disabled={claimMutation.isPending}
+                style={{ fontSize: '12px' }}
+              >
+                {claimMutation.isPending ? 'Claiming...' : 'Claim This Item'}
+              </button>
             )}
           </div>
         </div>
+
+        {actionError && (
+          <div
+            style={{
+              marginTop: 'var(--space-3)',
+              padding: '8px 12px',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              borderLeft: '3px solid var(--color-danger)',
+              color: 'var(--color-danger)',
+              fontSize: '12px',
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: '14px' }}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* State Machine Transition Action Bar */}
         <div
@@ -574,7 +613,10 @@ export const ItemDetail: React.FC = () => {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => transitionMutation.mutate({ targetStatus: 'triaged' })}
+              onClick={() => {
+                setActionError(null);
+                transitionMutation.mutate({ targetStatus: 'triaged' });
+              }}
               disabled={transitionMutation.isPending}
               style={{ fontSize: '12px' }}
             >
@@ -588,9 +630,10 @@ export const ItemDetail: React.FC = () => {
               className="btn btn-primary"
               onClick={() => {
                 if (!item.assignee_id) {
-                  alert('Item must have an assignee before moving to In Progress. Please claim it first.');
+                  setActionError('Item must have an assignee before moving to In Progress. Please claim it first.');
                   return;
                 }
+                setActionError(null);
                 transitionMutation.mutate({ targetStatus: 'in_progress' });
               }}
               disabled={transitionMutation.isPending}
@@ -877,11 +920,11 @@ export const ItemDetail: React.FC = () => {
             }}
           >
             <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', marginBottom: 'var(--space-4)' }}>
-              Comments ({data.comments.length})
+              Comments ({(data?.comments || []).length})
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
-              {data.comments.map((c) => (
+              {(data?.comments || []).map((c) => (
                 <div
                   key={c.id}
                   style={{
@@ -965,7 +1008,7 @@ export const ItemDetail: React.FC = () => {
               <div>
                 <span style={{ color: 'var(--color-text-muted)', display: 'block' }}>Type</span>
                 <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                  {item.type.replace('_', ' ')}
+                  {item.type ? item.type.replace('_', ' ') : 'task'}
                 </span>
               </div>
 
@@ -1074,15 +1117,27 @@ export const ItemDetail: React.FC = () => {
               rows={3}
               placeholder="Provide reason or context for this decision..."
               value={actionNote}
-              onChange={(e) => setActionNote(e.target.value)}
+              onChange={(e) => {
+                setActionNote(e.target.value);
+                if (modalError) setModalError(null);
+              }}
               required={actionModal.noteRequired}
             />
+
+            {modalError && (
+              <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '6px' }}>
+                {modalError}
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setActionModal(null)}
+                onClick={() => {
+                  setActionModal(null);
+                  setModalError(null);
+                }}
               >
                 Cancel
               </button>
@@ -1091,9 +1146,10 @@ export const ItemDetail: React.FC = () => {
                 className="btn btn-primary"
                 onClick={() => {
                   if (actionModal.noteRequired && !actionNote.trim()) {
-                    alert('Please enter a note');
+                    setModalError('Please enter a note explaining this decision.');
                     return;
                   }
+                  setModalError(null);
                   transitionMutation.mutate({
                     action: actionModal.action,
                     targetStatus: actionModal.targetStatus,

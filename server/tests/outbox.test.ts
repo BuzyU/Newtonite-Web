@@ -148,4 +148,58 @@ describe('Outbox Worker & Reliable Async Processing', () => {
     const count2 = await pool.query('SELECT COUNT(*)::int as count FROM sla_checks');
     expect(count2.rows[0].count).toBe(count1.rows[0].count);
   });
+
+  it('multi-worker concurrency: two concurrent worker instances process 20 events without collision via FOR UPDATE SKIP LOCKED', async () => {
+    const worker1 = new OutboxWorker();
+    const worker2 = new OutboxWorker();
+
+    try {
+      // Insert 20 pending events
+      const eventIds: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const id = crypto.randomUUID();
+        eventIds.push(id);
+        await pool.query(
+          `INSERT INTO outbox_events (id, event_type, payload, status)
+           VALUES ($1, 'item.created', $2, 'pending')`,
+          [
+            id,
+            JSON.stringify({
+              itemId: realItemId,
+              teamId: team.id,
+              shortRef: `OPS-MULTI-${i}`,
+              actorId: crypto.randomUUID(),
+            }),
+          ]
+        );
+      }
+
+      // Execute both workers concurrently
+      const [processed1, processed2] = await Promise.all([
+        worker1.processBatch(),
+        worker2.processBatch(),
+      ]);
+
+      // Total processed should equal 20 with no collisions
+      expect(processed1 + processed2).toBe(20);
+
+      // Verify all 20 events are completed and uniquely processed without duplicate execution
+      const checkRes = await pool.query(
+        `SELECT id, status, locked_by
+         FROM outbox_events
+         WHERE id = ANY($1::uuid[])`,
+        [eventIds]
+      );
+
+      expect(checkRes.rows).toHaveLength(20);
+      const uniqueCompletedIds = new Set(
+        checkRes.rows.filter((r) => r.status === 'completed').map((r) => r.id)
+      );
+      expect(uniqueCompletedIds.size).toBe(20);
+    } finally {
+      worker1.stop();
+      worker2.stop();
+    }
+  });
 });
+

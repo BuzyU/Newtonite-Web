@@ -74,6 +74,58 @@ describe('Optional Continue with Google via Supabase Auth', () => {
     expect(res.body.error.code).toBe('UNVERIFIED_EMAIL');
   });
 
+  it('never authenticates an existing user if the email is unverified', async () => {
+    env.GOOGLE_LOGIN_ENABLED = true;
+
+    setTokenValidator(
+      new MockTokenValidator(async () => ({
+        id: 'attacker-supabase-uuid-666',
+        email: 'marcus.lead@newtonite.local',
+        email_confirmed_at: null,
+        app_metadata: { provider: 'google' },
+        user_metadata: { email_verified: false },
+      }))
+    );
+
+    const res = await request(app)
+      .post('/api/v1/auth/google')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ accessToken: 'attacker-unverified-marcus-token' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('UNVERIFIED_EMAIL');
+
+    // Confirm no session was created for this attempt
+    const sessionCheck = await pool.query(
+      `SELECT s.id FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE LOWER(u.email) = 'marcus.lead@newtonite.local'
+         AND s.created_at > NOW() - INTERVAL '5 seconds'`
+    );
+    expect(sessionCheck.rows).toHaveLength(0);
+  });
+
+  it('rejects provider tokens that do not come from Google provider', async () => {
+    env.GOOGLE_LOGIN_ENABLED = true;
+
+    setTokenValidator(
+      new MockTokenValidator(async () => ({
+        id: 'supabase-github-user-123',
+        email: 'priya.lead@newtonite.local',
+        email_confirmed_at: '2026-01-01T00:00:00Z',
+        app_metadata: { provider: 'github' },
+      }))
+    );
+
+    const res = await request(app)
+      .post('/api/v1/auth/google')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .send({ accessToken: 'github-token' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('UNVERIFIED_EMAIL');
+  });
+
   it('returns 403 NOT_INVITED when verified Google email does not belong to any local team user', async () => {
     env.GOOGLE_LOGIN_ENABLED = true;
 
@@ -102,18 +154,12 @@ describe('Optional Continue with Google via Supabase Auth', () => {
     expect(checkRes.rows.length).toBe(0);
   });
 
-  it('authenticates known invited email, binds external_id, sets httpOnly session cookie, and returns team scopes', async () => {
+  it('authenticates a known invited email, mints a Postgres session cookie, and returns team scopes', async () => {
     env.GOOGLE_LOGIN_ENABLED = true;
-    const testGoogleId = 'supabase-google-priya-uuid-123';
-
-    // Reset external_id for test purity
-    await pool.query(
-      `UPDATE users SET external_id = NULL, auth_provider = 'local' WHERE LOWER(email) = 'priya.lead@newtonite.local'`
-    );
 
     setTokenValidator(
       new MockTokenValidator(async () => ({
-        id: testGoogleId,
+        id: 'supabase-google-priya-uuid-123',
         email: 'priya.lead@newtonite.local',
         email_confirmed_at: '2026-01-01T00:00:00Z',
         app_metadata: { provider: 'google' },
@@ -129,7 +175,7 @@ describe('Optional Continue with Google via Supabase Auth', () => {
     expect(res.body.user.email).toBe('priya.lead@newtonite.local');
     expect(res.body.user.teams.length).toBeGreaterThan(0);
 
-    // Verify same session cookie format
+    // Verify session cookie format
     const setCookie = res.headers['set-cookie'];
     expect(setCookie).toBeDefined();
     const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
@@ -137,15 +183,18 @@ describe('Optional Continue with Google via Supabase Auth', () => {
     expect(cookieStr.toLowerCase()).toContain('httponly');
     expect(cookieStr.toLowerCase()).toContain('samesite=lax');
 
-    // Verify external_id and auth_provider were saved
+    // Verify a session row was inserted in our sessions table
     const dbCheck = await pool.query(
-      'SELECT auth_provider, external_id FROM users WHERE LOWER(email) = $1',
-      ['priya.lead@newtonite.local']
+      `SELECT s.id FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE LOWER(u.email) = 'priya.lead@newtonite.local'
+         AND s.revoked_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT 1`
     );
-    expect(dbCheck.rows[0].auth_provider).toBe('google');
-    expect(dbCheck.rows[0].external_id).toBe(testGoogleId);
+    expect(dbCheck.rows).toHaveLength(1);
 
-    // Verify subsequent login directly resolves by external_id
+    // Second login returns the same user id
     const resSecond = await request(app)
       .post('/api/v1/auth/google')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -155,16 +204,17 @@ describe('Optional Continue with Google via Supabase Auth', () => {
     expect(resSecond.body.user.id).toBe(res.body.user.id);
   });
 
-  it('rejects login when external_id mismatches existing external_id for the same email', async () => {
+  it('returns 403 UNVERIFIED_EMAIL for the same email from a different provider', async () => {
+    // Without external_id, we rely on email + provider check.
+    // An attacker using a different provider (e.g. github) won't pass the provider=google gate.
     env.GOOGLE_LOGIN_ENABLED = true;
 
-    // Priya's external_id was bound to 'supabase-google-priya-uuid-123'
     setTokenValidator(
       new MockTokenValidator(async () => ({
-        id: 'attacker-different-supabase-id-999',
+        id: 'attacker-different-provider-999',
         email: 'priya.lead@newtonite.local',
         email_confirmed_at: '2026-01-01T00:00:00Z',
-        app_metadata: { provider: 'google' },
+        app_metadata: { provider: 'github' },
       }))
     );
 
@@ -174,6 +224,6 @@ describe('Optional Continue with Google via Supabase Auth', () => {
       .send({ accessToken: 'attacker-token' });
 
     expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('EXTERNAL_ID_MISMATCH');
+    expect(res.body.error.code).toBe('UNVERIFIED_EMAIL');
   });
 });

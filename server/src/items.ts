@@ -23,7 +23,7 @@ const CreateItemSchema = z.object({
   dueAt: z.string().datetime().nullable().optional(),
   requiresApproval: z.boolean().default(false),
   tags: z.array(z.string().max(50)).default([]),
-});
+}).strict();
 
 const UpdateItemSchema = z.object({
   title: z.string().min(3).max(255).optional(),
@@ -32,7 +32,7 @@ const UpdateItemSchema = z.object({
   assigneeId: z.string().uuid().nullable().optional(),
   dueAt: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(50)).optional(),
-});
+}).strict();
 
 const TransitionItemSchema = z.object({
   status: z.enum([
@@ -43,27 +43,31 @@ const TransitionItemSchema = z.object({
     'awaiting_approval',
     'resolved',
     'closed',
-  ]),
+  ]).optional(),
   action: z.enum(['triage', 'start_progress', 'block', 'unblock', 'submit_approval', 'approve', 'reject', 'resolve', 'close', 'reopen']).optional(),
+  note: z.string().optional(),
   resolutionNote: z.string().optional(),
   rejectionNote: z.string().optional(),
   assigneeId: z.string().uuid().nullable().optional(),
-});
+}).strict();
 
 const AddCommentSchema = z.object({
   content: z.string().min(1).max(10000),
-});
+}).strict();
 
 /**
- * Helper to build SQL WHERE clause scoped strictly to the caller's team memberships.
- * If user is not org admin, items outside caller's teams are completely filtered out in SQL.
+ * Helper to build SQL WHERE clause scoped strictly to the caller's organization and team memberships.
+ * Every item query is pinned to the caller's org (cross-org access is indistinguishable from
+ * not-found). Non-admins are additionally filtered to their own teams in SQL.
+ * Uses a single bind parameter ($paramStartIndex = caller's user id).
  */
 function buildMembershipFilter(userId: string, isOrgAdmin: boolean, paramStartIndex: number): { sql: string; params: any[] } {
+  const orgSql = `items.org_id = (SELECT org_id FROM users WHERE id = $${paramStartIndex})`;
   if (isOrgAdmin) {
-    return { sql: '1=1', params: [] };
+    return { sql: orgSql, params: [userId] };
   }
   return {
-    sql: `items.team_id IN (SELECT team_id FROM team_memberships WHERE user_id = $${paramStartIndex})`,
+    sql: `(${orgSql} AND items.team_id IN (SELECT team_id FROM team_memberships WHERE user_id = $${paramStartIndex}))`,
     params: [userId],
   };
 }
@@ -354,6 +358,23 @@ export async function getItemHandler(req: Request, res: Response): Promise<void>
       return 'Review item status and activity timeline.';
     }
 
+    // Fetch comments
+    const commentsRes = await pool.query(
+      `SELECT 
+         c.id,
+         c.item_id,
+         c.author_id,
+         u.name as user_name,
+         u.email as user_email,
+         c.content,
+         c.created_at
+       FROM comments c
+       JOIN users u ON u.id = c.author_id
+       WHERE c.item_id = $1
+       ORDER BY c.created_at ASC, c.id ASC`,
+      [item.id]
+    );
+
     const computedNext = computeNextAttention(item, user);
 
     // Emit ETag header with version
@@ -361,6 +382,7 @@ export async function getItemHandler(req: Request, res: Response): Promise<void>
     res.status(200).json({
       item,
       activity: activityRes.rows,
+      comments: commentsRes.rows,
       computed_next: computedNext,
     });
   } catch (err) {
@@ -417,8 +439,8 @@ export async function createItemHandler(req: Request, res: Response): Promise<vo
 
     // Atomic counter row update: UPDATE teams SET item_counter = item_counter + 1 WHERE id=$1 RETURNING prefix, item_counter
     const counterRes = await client.query<{ prefix: string; item_counter: string }>(
-      'UPDATE teams SET item_counter = item_counter + 1 WHERE id = $1 RETURNING prefix, item_counter',
-      [data.teamId]
+      'UPDATE teams SET item_counter = item_counter + 1 WHERE id = $1 AND org_id = $2 AND archived_at IS NULL RETURNING prefix, item_counter',
+      [data.teamId, user.orgId]
     );
 
     if (counterRes.rows.length === 0) {
@@ -618,6 +640,7 @@ export async function claimItemHandler(req: Request, res: Response): Promise<voi
             ? `Item was already claimed by ${owner.name} (${owner.email}).`
             : 'Item is already claimed or no longer available for claiming.',
           currentAssignee: owner,
+          current_assignee: owner,
           requestId: req.requestId,
         },
       });
@@ -953,7 +976,28 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
     return;
   }
 
-  const { status: targetStatus, action, resolutionNote, rejectionNote, assigneeId } = parseResult.data;
+  const rawData = parseResult.data;
+  let targetStatus = rawData.status;
+  const action = rawData.action;
+  const resolutionNote = rawData.resolutionNote ?? rawData.note;
+  const rejectionNote = rawData.rejectionNote ?? rawData.note;
+  const assigneeId = rawData.assigneeId;
+
+  if (!targetStatus) {
+    if (action === 'approve') targetStatus = 'resolved';
+    else if (action === 'reject') targetStatus = 'in_progress';
+    else if (action === 'reopen') targetStatus = 'triaged';
+    else {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: "Target 'status' is required for this transition.",
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -1017,33 +1061,7 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
     const isApprovalAction = action === 'approve' || targetStatus === 'resolved' && item.status === 'awaiting_approval';
     const isRejectionAction = action === 'reject' || targetStatus === 'in_progress' && item.status === 'awaiting_approval';
 
-    // 1. Validate state machine transition rules
-    const effectiveAssigneeId = assigneeId !== undefined ? assigneeId : item.assignee_id;
-    const transitionValidation = validateTransition({
-      currentStatus: item.status as ItemStatus,
-      targetStatus: targetStatus as ItemStatus,
-      requiresApproval: item.requires_approval,
-      assigneeId: effectiveAssigneeId,
-      resolutionNote: resolutionNote ?? item.resolution_note,
-      rejectionNote,
-      isApprovalAction,
-      isRejectionAction,
-      isReopenAction,
-    });
-
-    if (!transitionValidation.valid) {
-      await client.query('ROLLBACK');
-      res.status(409).json({
-        error: {
-          code: 'INVALID_TRANSITION',
-          message: transitionValidation.error || 'Requested state transition is invalid.',
-          requestId: req.requestId,
-        },
-      });
-      return;
-    }
-
-    // 2. Authorization & Separation of Duties check
+    // 1. Authorization & Separation of Duties check (enforce role & separation of duties before transition validation)
     if (isApprovalAction) {
       const approveAuth = can(user, 'approve_item', { teamId: item.team_id, item });
       if (!approveAuth.allowed) {
@@ -1109,6 +1127,32 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
         });
         return;
       }
+    }
+
+    // 2. Validate state machine transition rules
+    const effectiveAssigneeId = assigneeId !== undefined ? assigneeId : item.assignee_id;
+    const transitionValidation = validateTransition({
+      currentStatus: item.status as ItemStatus,
+      targetStatus: targetStatus as ItemStatus,
+      requiresApproval: item.requires_approval,
+      assigneeId: effectiveAssigneeId,
+      resolutionNote: resolutionNote ?? item.resolution_note,
+      rejectionNote,
+      isApprovalAction,
+      isRejectionAction,
+      isReopenAction,
+    });
+
+    if (!transitionValidation.valid) {
+      await client.query('ROLLBACK');
+      res.status(409).json({
+        error: {
+          code: 'INVALID_TRANSITION',
+          message: transitionValidation.error || 'Requested state transition is invalid.',
+          requestId: req.requestId,
+        },
+      });
+      return;
     }
 
     // 3. Prepare update values
@@ -1226,6 +1270,33 @@ export async function transitionItemHandler(req: Request, res: Response): Promis
   } finally {
     client.release();
   }
+}
+
+/**
+ * Lead Approval Endpoint (BUG-01)
+ * POST /api/v1/items/:id/approve
+ */
+export async function approveItemHandler(req: Request, res: Response): Promise<void> {
+  req.body = { ...req.body, action: 'approve', status: 'resolved', resolutionNote: req.body?.note || req.body?.resolutionNote };
+  return transitionItemHandler(req, res);
+}
+
+/**
+ * Lead Rejection Endpoint (BUG-01)
+ * POST /api/v1/items/:id/reject
+ */
+export async function rejectItemHandler(req: Request, res: Response): Promise<void> {
+  req.body = { ...req.body, action: 'reject', status: 'in_progress', rejectionNote: req.body?.note || req.body?.rejectionNote };
+  return transitionItemHandler(req, res);
+}
+
+/**
+ * Reopen Endpoint (BUG-01)
+ * POST /api/v1/items/:id/reopen
+ */
+export async function reopenItemHandler(req: Request, res: Response): Promise<void> {
+  req.body = { ...req.body, action: 'reopen', status: 'triaged', resolutionNote: req.body?.note || req.body?.resolutionNote };
+  return transitionItemHandler(req, res);
 }
 
 /**
@@ -1573,13 +1644,11 @@ export async function getAttentionDashboardHandler(req: Request, res: Response):
     ]);
 
     res.status(200).json({
-      attention: {
-        awaitingApproval: awaitingApproval.rows,
-        mineDue: mineDue.rows,
-        urgentUnassigned: urgentUnassigned.rows,
-        goneQuiet: goneQuiet.rows,
-        unreadNotifications: unreadNotifications.rows,
-      },
+      awaiting_approval: awaitingApproval.rows,
+      mine_due_soon: mineDue.rows,
+      urgent_unassigned: urgentUnassigned.rows,
+      mentions: unreadNotifications.rows,
+      gone_quiet: goneQuiet.rows,
     });
   } catch (err) {
     logger.error({ err, requestId: req.requestId }, 'Failed fetching attention dashboard data');

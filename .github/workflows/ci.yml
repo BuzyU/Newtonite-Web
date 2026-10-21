@@ -34,12 +34,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v6
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: 'server/package-lock.json'
 
@@ -55,13 +55,23 @@ jobs:
       - name: Run migrations on test DB
         env:
           DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
+          NODE_ENV: test
         run: npm --prefix server run migrate
 
-      - name: Run server test suite
+      - name: Seed test DB
         env:
           DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
           SESSION_SECRET: test-session-secret-must-be-at-least-32-chars
           NODE_ENV: test
+        run: npm --prefix server run seed
+
+      - name: Run server test suite
+        env:
+          DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
+          TEST_DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/newtonite_test
+          SESSION_SECRET: test-session-secret-must-be-at-least-32-chars
+          NODE_ENV: test
+          DB_POOL_MAX: 50
         run: npm --prefix server run test
 
       - name: Build server bundle
@@ -73,12 +83,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v6
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
 
@@ -114,13 +124,13 @@ jobs:
 
       - name: Checkout code
         if: env.HAS_DB_SECRET == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js 22
         if: env.HAS_DB_SECRET == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: 'server/package-lock.json'
 
