@@ -27,7 +27,7 @@ export interface AuthContextValue {
   user: UserProfile | null;
   isLoading: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, remember?: boolean) => Promise<void>;
   registerOrg: (payload: {
     orgName: string;
     orgSlug?: string;
@@ -83,10 +83,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, remember: boolean = true) => {
     const res = await apiFetch<{ user: UserProfile }>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password, remember: true }),
+      body: JSON.stringify({ email, password, remember }),
       headers: { 'Content-Type': 'application/json' },
     });
     setUser(res.data.user);

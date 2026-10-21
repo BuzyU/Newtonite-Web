@@ -95,25 +95,27 @@ npm test
 npm run lint
 ```
 
-### Verified Test Suites (18 suites passing against real PostgreSQL 16):
-1. `concurrency.test.ts`: 50 concurrent claims on one item with `DB_POOL_MAX=50` -> exactly 1 winner (200), 49 losers (409 `ALREADY_CLAIMED`), 1 activity log entry.
+### Verified Test Suites (20 suites passing against real PostgreSQL 16 & Vitest):
+1. `concurrency.test.ts`: Concurrent claims on one item -> exactly 1 winner (200), remaining losers (409 `ALREADY_CLAIMED`), 1 activity log entry.
 2. `versioning.test.ts`: Missing `If-Match` returns 428; stale version returns 412 with server item; matching version increments `version`; strict Zod schema validation rejects mass-assignment (422).
 3. `idempotency.test.ts`: Two-phase reservation; per-user scoping (`PRIMARY KEY (user_id, idempotency_key)`); canonical JSON key sorting; replayed requests return cached response; mismatched route/body returns 422; 5xx errors do not cache or delete committed effects.
 4. `authorization.test.ts`: Other-team items return 404 (never 403); cross-team role scoping (Priya Lead in Ops vs Viewer in Eng).
 5. `transitions.test.ts`: Comprehensive state machine transitions, resolution notes required, separation of duties in lead approvals.
 6. `approve_reject.test.ts`: Proves approve/reject/reopen enforce: role, creator != approver, If-Match, idempotency, activity row, outbox event.
-7. `outbox.test.ts`: Transactional outbox polling, lease expiration reclamation, exponential backoff, dead-letter transition, deduplication, and multi-worker concurrent partitioning via `FOR UPDATE SKIP LOCKED` (asserts total completed == N with no duplicates).
+7. `outbox.test.ts`: Transactional outbox polling, lease expiration reclamation, exponential backoff, dead-letter transition, deduplication, and multi-worker concurrent partitioning via `FOR UPDATE SKIP LOCKED`.
 8. `activity_log.test.ts`: Transaction rollback atomicity; immutability trigger blocks UPDATE, DELETE, and TRUNCATE.
 9. `pagination.test.ts`: Keyset pagination has zero duplicates and zero skipped rows across concurrent inserts; search input safety with malformed tsquery syntax.
 10. `rls.test.ts`: Verifies Row Level Security is enabled on every table in schema `public`.
 11. `firebase_auth.test.ts`: Verifies unauthenticated login endpoint is eradicated (returns 404 `ROUTE_NOT_FOUND`).
 12. `google_auth.test.ts`: Verifies Google OAuth token validation: signature, issuer, audience, expiry, `email_verified`, and no auto-linking on unverified emails.
-13. `sse.test.ts`: Dynamic membership re-check on every broadcast, unscoped events restricted to Org Admin, `Last-Event-ID` missed event resync, and client connection teardown on team removal.
-14. `rate_limit.test.ts`: Login brute-force rate limit (429 with `Retry-After`) and mutating write rate limiter.
-15. `frontend_contract.test.ts`: Contract tests hitting all frontend API endpoints with canonical JSON shapes.
-16. `stale-edit.test.tsx` (frontend): Client stale-edit conflict panel displays diff and offers re-apply.
-17. `optimistic-rollback.test.tsx` (frontend): Client handles 409 claim race gracefully and displays winner's name.
-18. `idempotency-client.test.tsx` (frontend): Client generates 1 key per user intent, reuses on auto-retry, creates fresh key on new intent, and provides double-click protection.
+13. `org_onboarding.test.ts` (backend): Atomic organization registration transaction, initial admin assignment, duplicate slug handling, and org member provisioning.
+14. `sse.test.ts`: Dynamic membership re-check on every broadcast, unscoped events restricted to Org Admin, `Last-Event-ID` missed event resync, and client connection teardown on team removal.
+15. `rate_limit.test.ts`: Login brute-force rate limit (429 with `Retry-After`) and mutating write rate limiter.
+16. `frontend_contract.test.ts`: Contract tests hitting all frontend API endpoints with canonical JSON shapes.
+17. `stale-edit.test.tsx` (frontend): Client stale-edit conflict panel displays diff and offers re-apply.
+18. `optimistic-rollback.test.tsx` (frontend): Client handles 409 claim race gracefully and displays winner's name.
+19. `idempotency-client.test.tsx` (frontend): Client generates 1 key per user intent, reuses on auto-retry, creates fresh key on new intent, and provides double-click protection.
+20. `landing-auth.test.tsx` (frontend): Public landing page with dual entry buttons, absence of Google sign-in, and password toggle accessibility.
 
 ---
 

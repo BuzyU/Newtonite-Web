@@ -39,8 +39,8 @@ export const OnboardingPage: React.FC = () => {
       setErrorMsg('Admin name and work email are required.');
       return;
     }
-    if (password.length < 8) {
-      setErrorMsg('Password must be at least 8 characters long.');
+    if (password.length < 12) {
+      setErrorMsg('Password must be at least 12 characters long.');
       return;
     }
     setErrorMsg(null);

@@ -243,6 +243,16 @@ export class OutboxWorker {
       case 'item.commented': {
         const { commentId, itemId, content, mentionedEmails } = payload;
 
+        // Verify item exists
+        const itemCheck = await client.query<{ org_id: string }>(
+          `SELECT org_id FROM items WHERE id = $1`,
+          [itemId]
+        );
+        if (itemCheck.rows.length === 0) {
+          throw new Error(`Referenced item ${itemId} does not exist in items table`);
+        }
+        const itemOrgId = itemCheck.rows[0].org_id;
+
         // If specific users were @mentioned, notify them and simulate sending an email
         if (Array.isArray(mentionedEmails) && mentionedEmails.length > 0) {
           for (const email of mentionedEmails) {
@@ -251,8 +261,8 @@ export class OutboxWorker {
               `SELECT id, email, name FROM users
                WHERE (LOWER(email) = LOWER($1) OR LOWER(email) LIKE LOWER($2))
                  AND is_active = TRUE
-                 AND org_id = (SELECT org_id FROM items WHERE id = $3)`,
-              [email, `${email}%`, itemId]
+                 AND org_id = $3`,
+              [email, `${email}%`, itemOrgId]
             );
             if (uRes.rows.length > 0) {
               const mentionedUser = uRes.rows[0];

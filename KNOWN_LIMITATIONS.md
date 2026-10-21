@@ -35,6 +35,14 @@ This document provides a truthful and honest accounting of architectural trade-o
   - *Limitation 2 (Horizontal Scaling):* When scaling across multiple API containers behind a load balancer, rate limits are tracked per-container rather than globally across the fleet.
   - *Production Path:* For multi-instance high-availability deployments, replace the in-memory maps with a shared distributed cache (Redis or Valkey via Upstash/ElastiCache) using sliding window rate limiting.
 
+### 1.7 Render IPv6 Egress & Supabase Direct Host
+- **Limitation:** Render free containers lack IPv6 egress routing. Attempting to connect to direct Supabase endpoints (`db.<project-ref>.supabase.co:5432`) causes `connect ENETUNREACH 2406:...` errors.
+- **Solution & Requirement:** The database connection must use the IPv4 Supabase session pooler hostname (`aws-0-[region].pooler.supabase.com:5432`). Special characters in database passwords (such as `,` or `*`) must be URL percent-encoded (`%2C`, `%2A`).
+
+### 1.8 Supabase Free-Tier Pooler Max Client Limits
+- **Limitation:** Supabase's free-tier session pooler enforces a hard server-side concurrency cap of 15 simultaneous client connections (`pool_size: 15`). Exceeding this triggers `(EMAXCONNSESSION) max client connections reached`.
+- **Mitigation:** The application configures `DB_POOL_MAX=10` by default. Under heavy client concurrency, requests queue cleanly in the Node.js `pg-pool` FIFO queue rather than crashing on rejected database connections.
+
 ---
 
 ## 2. Functional & Architecture Boundaries
@@ -46,7 +54,12 @@ This document provides a truthful and honest accounting of architectural trade-o
 ### 2.2 Keyset Sorting Dimension
 - **Limitation:** Keyset pagination is strictly ordered by `(last_activity_at DESC, id DESC)`. Sorting dynamically by arbitrary columns (e.g. title alphabetically or due date) without corresponding composite keyset indexes falls back to constrained result sets.
 
-### 2.3 What Was Cut / Intentionally Deferred
+### 2.3 Email Delivery Configuration
+- **Limitation:** External email delivery (SMTP / Resend / SendGrid) is not provisioned out of the box in free tier environments.
+- **Mitigation:** When administrators create new user accounts, the server generates a cryptographically secure temporary password and displays it via a one-time reveal card with a copy-to-clipboard action for out-of-band delivery.
+
+### 2.4 What Was Cut / Intentionally Deferred
 - **SAML / OIDC Single Sign-On:** Authenticated via signed, secure `httpOnly` cookies with Argon2id password hashing. Corporate SAML/SSO was deferred to maintain simplicity.
 - **Rich-Text WYSIWYG Editor:** Item descriptions and comments use clean plain text and markdown.
 - **Multi-Region Database Replication:** Single primary database in Singapore region (paired with Render Singapore instance).
+

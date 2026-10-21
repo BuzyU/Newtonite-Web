@@ -1,6 +1,23 @@
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+
+/**
+ * Validates redirect destination to prevent open-redirect vulnerabilities.
+ * Only internal, relative paths starting with a single '/' are permitted.
+ */
+function getSafeRedirectUrl(target: string | null): string {
+  if (!target) return '/';
+  if (
+    target.startsWith('/') &&
+    !target.startsWith('//') &&
+    !target.startsWith('/\\') &&
+    !target.includes(':')
+  ) {
+    return target;
+  }
+  return '/';
+}
 
 const DEMO_ACCOUNTS = [
   { name: 'Alice Admin', role: 'Org Administrator', email: 'admin@newtonite.local', pass: 'Password123!' },
@@ -14,9 +31,12 @@ const DEMO_ACCOUNTS = [
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,9 +54,11 @@ export const LoginPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await login(email, password);
-      const params = new URLSearchParams(window.location.search);
-      navigate(params.get('redirect') || '/');
+      await login(email, password, rememberMe);
+      const params = new URLSearchParams(location.search);
+      const fromState = (location.state as any)?.from?.pathname;
+      const targetDestination = getSafeRedirectUrl(fromState || params.get('redirect') || params.get('next'));
+      navigate(targetDestination, { replace: true });
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid email or password.');
     } finally {
@@ -53,6 +75,7 @@ export const LoginPage: React.FC = () => {
         justifyContent: 'center',
         backgroundColor: 'var(--color-bg-app)',
         padding: 'var(--space-4)',
+        fontFamily: 'var(--font-sans)',
       }}
     >
       <div
@@ -92,13 +115,14 @@ export const LoginPage: React.FC = () => {
             Sign In to Workspace
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
-            Enter your credentials to access operations items.
+            Enter your email and password to access items and workflow queues.
           </p>
         </div>
 
         {/* Error message */}
         {errorMsg && (
           <div
+            role="alert"
             style={{
               padding: '10px 12px',
               backgroundColor: 'var(--color-danger-bg)',
@@ -114,7 +138,7 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <label
               htmlFor="login-email"
@@ -151,40 +175,88 @@ export const LoginPage: React.FC = () => {
             />
           </div>
 
-          <div style={{ marginBottom: 'var(--space-4)' }}>
-            <label
-              htmlFor="login-password"
-              style={{
-                display: 'block',
-                fontSize: '12px',
-                fontWeight: 500,
-                marginBottom: '4px',
-                color: 'var(--color-text-primary)',
-              }}
-            >
-              Password
-            </label>
+          <div style={{ marginBottom: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label
+                htmlFor="login-password"
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: 'var(--color-text-primary)',
+                }}
+              >
+                Password
+              </label>
+            </div>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••••"
+                style={{
+                  width: '100%',
+                  padding: '8px 36px 8px 10px',
+                  fontSize: '13px',
+                  fontFamily: 'var(--font-sans)',
+                  backgroundColor: 'var(--color-bg-surface)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                }}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          {/* Remember Me Option */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-4)' }}>
             <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
+              id="remember-me-checkbox"
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
               style={{
-                width: '100%',
-                padding: '8px 10px',
-                fontSize: '13px',
-                fontFamily: 'var(--font-sans)',
-                backgroundColor: 'var(--color-bg-surface)',
-                color: 'var(--color-text-primary)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-sm)',
-                outline: 'none',
-                boxSizing: 'border-box',
+                cursor: 'pointer',
+                accentColor: 'var(--color-text-primary)',
               }}
             />
+            <label
+              htmlFor="remember-me-checkbox"
+              style={{
+                fontSize: '12px',
+                color: 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              Remember me on this device (30 days)
+            </label>
           </div>
 
           <button

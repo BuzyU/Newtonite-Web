@@ -78,10 +78,57 @@ This document records the foundational architecture and engineering trade-offs m
 
 ---
 
-## 7. Hosting Architecture & Trade-Offs
+## 8. Organization Bootstrap & Atomic Tenant Creation
 
-1. **In-Process Worker on Render Free Tier:** Render's free tier supports a single web service. Running the outbox worker loop inside the Express API (`RUN_WORKER_IN_API=true`) allows full asynchronous outbox processing without requiring paid worker services.
-2. **Render Cold Starts:** The free plan spins down after 15 minutes of idle time. The frontend handles this gracefully by detecting delayed responses (>3s), displaying an informative wake-up banner, and retrying automatically.
-3. **Supabase Session-Mode Pooler (Port 5432):** We connect via port 5432 (session mode) rather than port 6543 (transaction mode) because advisory migration locks and `LISTEN/NOTIFY` require session-scoped connections.
-4. **Connection Pool vs. Concurrency Claims:** The 50-parallel claim test fires 50 HTTP requests concurrently. In node-postgres, these pipeline through `DB_POOL_MAX` (default 5 or 20). Mutual exclusion is guaranteed at the database engine level by atomic conditional SQL (`UPDATE items SET assignee_id = $1 ... WHERE assignee_id IS NULL`), not by pool size. Even if all 50 executed on 50 distinct connections at the same nanosecond, exactly 1 row will ever match `assignee_id IS NULL`.
+- **Context:** An organization onboarding workflow must safely provision a tenant workspace, its initial administrator, and its operational foundation without allowing privilege escalation or leaving dangling records on network/database failure.
+- **Options Considered:**
+  1. *Multi-request creation from frontend:* Frontend calls `createOrg`, then `createUser`, then `createTeams`, then `assignRoles`. If step 3 fails, an orphaned organization and user exist without default teams.
+  2. *Single database transaction (`BEGIN ... COMMIT`):* The backend endpoint `POST /api/v1/auth/register-org` executes all 4 steps inside a single database transaction.
+- **Decision:** Atomic server-side creation within a single transaction.
+  - Generates or validates unique organization slug.
+  - Hashes admin password with Argon2id.
+  - Inserts organization and administrator record with `is_org_admin = TRUE`.
+  - Automatically seeds default operational teams (`operations`, `engineering`, `payments`).
+  - Binds the administrator to all default teams with `admin` role.
+  - Automatically establishes a 30-day persistent session.
+  - If any step throws an error, the entire transaction rolls back cleanly.
+- **Security Safeguard:** A public caller can only bootstrap a *new* organization; they cannot grant themselves administrator privileges inside an existing organization.
+
+---
+
+## 9. Role Separation: Organization Administrator vs. Team-Level Roles
+
+- **Context:** Large operational organizations require clear boundaries between platform administration (inviting employees, provisioning credentials, auditing rosters) and operational triage (creating items, executing workflow transitions, approving releases).
+- **Decision:** Explicit architectural separation between organization-level and team-level roles:
+  - **Organization Administrator (`is_org_admin: true`):** Platform manager. Can access `/admin` (Admin Console), provision user credentials, manage organization-wide rosters, and view dead-letter outbox events.
+  - **Team Roles (`viewer`, `member`, `lead`, `admin`):** Scoped to specific team work items:
+    - *Viewer:* Read-only access to team queue. Cannot mutate or claim items.
+    - *Member:* Can create, claim, edit, transition, and comment on team items. Cannot approve items.
+    - *Lead:* Can review and execute approval transitions (`approve`, `reject`). Enforces separation of duties (cannot approve items they created or currently hold).
+    - *Admin:* Team-level configuration authority.
+- **Enforcement:** Enforced at the SQL query level and Express middleware (`requireOrgAdmin`), never by merely hiding frontend UI buttons.
+
+---
+
+## 10. Session Security & Cookie Lifecycle
+
+- **Context:** Authentication must survive page reloads and browser restarts without vulnerable token storage in `localStorage` or `sessionStorage`.
+- **Decision:** Server-managed sessions backed by PostgreSQL `sessions` table and signed `httpOnly` cookies:
+  - **Cookie Flags:** `httpOnly: true`, `SameSite: 'lax'`, `path: '/'`, `secure: true` in production over HTTPS.
+  - **Session Duration:** 30 days (`maxAge: 30 * 24 * 3600 * 1000`) for "Remember Me", 12 hours for standard session.
+  - **CSRF Defense:** State-changing requests (`POST`, `PATCH`, `PUT`, `DELETE`) require the custom header `X-Requested-With: XMLHttpRequest` and undergo strict origin checking.
+  - **Removal of Third-Party Dependencies:** Google OAuth login was removed entirely. Authentication relies on secure email + Argon2id password verification.
+  - **Session Invalidation:** Logout revokes the server session in PostgreSQL, clears the browser cookie, and purges all user-scoped query caches.
+
+---
+
+## 11. Visual Design Direction: "Quiet Operations"
+
+- **Context:** Operational staff triage incidents and approvals under intense cognitive load. Flashy marketing aesthetics, animated blobs, glowing purple/cyan AI gradients, and decorative emojis increase fatigue and degrade usability.
+- **Decision:** "Quiet Operations" design system:
+  - **Default Theme:** Light theme by default for new visitors. Dark theme available via explicit toggle.
+  - **Color Palette:** Pure white and soft zinc/slate surfaces (`#FFFFFF`, `#F8FAFC`, `#F1F5F9`), deep charcoal high-contrast text (`#0F172A`), muted secondary labels (`#64748B`), and a single restrained slate-blue accent (`#2563EB`). Zero AI neon glowing effects.
+  - **Typography:** IBM Plex Sans for editorial clarity and IBM Plex Mono for technical identifiers (`OPS-1042`, ETags, timestamps).
+  - **Iconography:** Clean, accessible SVG vector icons and text labels. Zero emojis in navigation.
+
 

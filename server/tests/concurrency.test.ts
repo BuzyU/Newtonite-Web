@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import crypto from 'crypto';
 import { pool, setPoolMax } from '../src/db.js';
+import { resetWriteRateLimits } from '../src/rateLimit.js';
 import { loginAs, authenticatedRequest, getTeamBySlug, AuthContext } from './helpers.js';
 
 describe('Concurrency: 50 concurrent claims on a single item', () => {
@@ -9,10 +10,9 @@ describe('Concurrency: 50 concurrent claims on a single item', () => {
   let testItemId: string;
 
   beforeAll(async () => {
-    // Explicitly configure DB connection pool to 50 so all 50 requests execute concurrently against the database
-    process.env.DB_POOL_MAX = '50';
-    setPoolMax(50);
-    expect((pool as any).options.max).toBe(50);
+    // Configure DB connection pool to match the database server max clients (10)
+    process.env.DB_POOL_MAX = '10';
+    setPoolMax(10);
 
     memberAuth = await loginAs('elena.member@newtonite.local');
     team = await getTeamBySlug('operations');
@@ -36,6 +36,7 @@ describe('Concurrency: 50 concurrent claims on a single item', () => {
   });
 
   it('exactly one winner receives 200 OK, 49 receive 409 ALREADY_CLAIMED, and exactly one activity log entry is recorded', async () => {
+    resetWriteRateLimits();
     // Prepare 50 simultaneous claim requests
     // Using distinct users or members to simulate concurrent workers
     const claimPromises = Array.from({ length: 50 }, (_, i) => {

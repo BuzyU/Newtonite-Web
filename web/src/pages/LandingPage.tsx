@@ -117,7 +117,7 @@ export const LandingPage: React.FC = () => {
 
           <h1
             style={{
-              fontSize: '36px',
+              fontSize: '38px',
               fontWeight: 700,
               lineHeight: 1.15,
               letterSpacing: '-0.02em',
@@ -125,7 +125,7 @@ export const LandingPage: React.FC = () => {
               color: 'var(--color-text-primary)',
             }}
           >
-            Deterministic Operations Under Pressure
+            Operational work, with clear ownership.
           </h1>
 
           <p
@@ -136,8 +136,8 @@ export const LandingPage: React.FC = () => {
               margin: '0 0 32px 0',
             }}
           >
-            Engineered for high-volume operational teams. Guaranteed conflict detection with optimistic locking,
-            immutable event audit logs, and complete multi-tenant workspace isolation.
+            Coordinate requests, investigations, incidents, and approvals in one accountable workspace.
+            Deterministic state machines, optimistic concurrency control, and complete tenant isolation.
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
@@ -157,7 +157,7 @@ export const LandingPage: React.FC = () => {
                 gap: '8px',
               }}
             >
-              Create for your Organization &rarr;
+              Create your organization &rarr;
             </Link>
 
             <Link
@@ -174,7 +174,7 @@ export const LandingPage: React.FC = () => {
                 textDecoration: 'none',
               }}
             >
-              Sign In to Existing Workspace
+              Sign in
             </Link>
           </div>
         </div>

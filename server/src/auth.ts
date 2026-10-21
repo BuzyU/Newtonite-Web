@@ -334,6 +334,7 @@ async function buildUserPayload(user: {
     email: user.email,
     name: user.name,
     isOrgAdmin: user.isOrgAdmin,
+    is_org_admin: user.isOrgAdmin,
     orgId: user.orgId,
     orgName: user.orgName,
     orgSlug: user.orgSlug,

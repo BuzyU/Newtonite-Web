@@ -33,12 +33,6 @@ The table below details where every configuration variable lives across environm
 | `TRUST_PROXY` | Render, Local | Config | Express trust proxy hop count (default `'2'`). Matches Vercel Edge (Hop 1) -> Render Proxy (Hop 2) -> Node.js, ensuring genuine client IP resolution for rate limiting. |
 | `RUN_WORKER_IN_API` | Render, Local | Config | When `true`, executes the outbox polling worker in the same Node.js process as the API server. |
 | `RENDER_DEPLOY_HOOK_URL`| GitHub Secrets (`production`) | Secret | Webhook URL triggered by GitHub Actions deploy workflow to initiate automated Render rolling deploy. |
-| `GOOGLE_LOGIN_ENABLED` | Render, Local | Config | Controls server-side `POST /api/v1/auth/google`. Set to `true` to enable federated Google auth; returns 404 when `false`. |
-| `SUPABASE_URL` | Render, Local | Config | Supabase project URL (e.g. `https://xyz.supabase.co`) used by the API to verify access tokens against `/auth/v1/user`. |
-| `SUPABASE_PUBLISHABLE_KEY` | Render, Local | Public / Config | Supabase public anonymous API key sent as `apikey` header to `/auth/v1/user`. Never requires or uses `service_role` key. |
-| `VITE_GOOGLE_LOGIN_ENABLED` | Vercel, Local | Public Build-time | Controls visibility of the "Continue with Google" button on `/login`. When `false`, button is completely removed from DOM. |
-| `VITE_SUPABASE_URL` | Vercel, Local | Public Build-time | Client-side Supabase project endpoint passed to `@supabase/supabase-js` for OAuth redirection. |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Vercel, Local | Public Build-time | Client-side Supabase anon key passed to `@supabase/supabase-js`. Safe to bundle in client. |
 
 ---
 

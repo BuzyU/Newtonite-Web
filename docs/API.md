@@ -56,9 +56,17 @@ All non-2xx responses return a consistent JSON envelope:
 - `GET /ready` — Readiness check (executes `SELECT 1` on database). Returns `200 { status: "ready" }` or `503`.
 
 ### Authentication & Identity
-- `POST /auth/login` — Sign in with `{ email, password }`. Sets signed `httpOnly` cookie.
-- `POST /auth/logout` — Invalidate session and clear cookie.
-- `GET /auth/me` — Return authenticated user profile and team memberships.
+- `POST /auth/register-org` — Atomic organization registration. Creates workspace, provisions initial administrator, seeds default teams (`operations`, `engineering`, `payments`), and establishes 30-day session cookie.
+  - Body: `{ orgName, orgSlug?, adminName, adminEmail, password }`
+- `POST /auth/login` — Sign in with `{ email, password, remember? }`. Sets signed `httpOnly` cookie (`maxAge`: 30 days if remember=true, 12 hours otherwise).
+- `POST /auth/logout` — Invalidate session in database and clear cookie.
+- `GET /auth/me` — Return authenticated user profile, organization metadata, and team memberships.
+
+### Organization & User Administration (Org Admins Only)
+- `GET /admin/users` — List all members across the administrator's organization, including assigned teams and active roles.
+- `POST /admin/users` — Provision a new organization user account with credentials and team role assignment.
+  - Body: `{ name, email, password?, isOrgAdmin?, teamId?, role? }`
+  - Returns: `{ user, temporaryPassword, message }`
 
 ### Work Items
 - `GET /items` — Keyset paginated work queue.
