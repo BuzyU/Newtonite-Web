@@ -56,12 +56,17 @@ export function authenticatedRequest(auth: AuthContext) {
 }
 
 /**
- * Retrieves the test team by slug
+ * Retrieves the test team by slug, scoped to the default demo organization
  */
-export async function getTeamBySlug(slug: string): Promise<{ id: string; name: string; prefix: string }> {
+export async function getTeamBySlug(slug: string, orgSlug = 'newtonite-demo'): Promise<{ id: string; name: string; prefix: string }> {
   const res = await pool.query<{ id: string; name: string; prefix: string }>(
-    'SELECT id, name, prefix FROM teams WHERE slug = $1',
-    [slug]
+    `SELECT t.id, t.name, t.prefix
+     FROM teams t
+     LEFT JOIN organizations o ON o.id = t.org_id
+     WHERE t.slug = $1 AND (o.slug = $2 OR o.slug IS NULL)
+     ORDER BY t.created_at ASC
+     LIMIT 1`,
+    [slug, orgSlug]
   );
   if (res.rows.length === 0) {
     throw new Error(`Team with slug ${slug} not found in database.`);

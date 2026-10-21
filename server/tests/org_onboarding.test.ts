@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import crypto from 'crypto';
 import { app, authenticatedRequest, loginAs, AuthContext } from './helpers.js';
@@ -11,6 +11,13 @@ describe('Organization Onboarding and Admin User Provisioning', () => {
   beforeAll(async () => {
     adminAuth = await loginAs('admin@newtonite.local');
     normalMemberAuth = await loginAs('elena.member@newtonite.local');
+  });
+
+  afterAll(async () => {
+    // Clean up test organizations and provisioned users created during testing
+    await pool.query("DELETE FROM users WHERE email LIKE 'founder.%' OR email LIKE 'dev.%@newtonite.local'");
+    await pool.query("DELETE FROM teams WHERE org_id IN (SELECT id FROM organizations WHERE slug LIKE 'acme-%' OR name LIKE 'Acme Enterprise%')");
+    await pool.query("DELETE FROM organizations WHERE slug LIKE 'acme-%' OR name LIKE 'Acme Enterprise%'");
   });
 
   describe('POST /api/v1/auth/register-org', () => {
