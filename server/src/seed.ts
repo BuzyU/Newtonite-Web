@@ -56,6 +56,15 @@ export async function runSeed(options: SeedOptions): Promise<void> {
     // 2. Hash demo password once using argon2id (same algorithm as auth.ts)
     const passwordHash = await hashPassword(DEMO_PASSWORD);
 
+    // 2b. Ensure default demo organization exists before inserting teams and users
+    const orgRes = await client.query<{ id: string }>(
+      `INSERT INTO organizations (name, slug)
+       VALUES ('Newtonite Demo', 'newtonite-demo')
+       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`
+    );
+    const defaultOrgId = orgRes.rows[0].id;
+
     // 3. Insert Teams
     const teams = [
       { name: 'Operations & Support', slug: 'operations', prefix: 'OPS' },
@@ -67,11 +76,11 @@ export async function runSeed(options: SeedOptions): Promise<void> {
 
     for (const t of teams) {
       const res = await client.query(
-        `INSERT INTO teams (name, slug, prefix, item_counter)
-         VALUES ($1, $2, $3, 1000)
-         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+        `INSERT INTO teams (name, slug, prefix, item_counter, org_id)
+         VALUES ($1, $2, $3, 1000, $4)
+         ON CONFLICT (org_id, slug) DO UPDATE SET name = EXCLUDED.name
          RETURNING id, slug, prefix`,
-        [t.name, t.slug, t.prefix]
+        [t.name, t.slug, t.prefix, defaultOrgId]
       );
       teamMap.set(t.slug, { id: res.rows[0].id, prefix: res.rows[0].prefix });
     }
@@ -113,15 +122,6 @@ export async function runSeed(options: SeedOptions): Promise<void> {
 
     const userMap = new Map<string, string>(); // email -> id
     const generatedAdminCredentials: Array<{ email: string; password: string }> = [];
-
-    // Lookup the default org once before the user loop
-    const orgRes = await client.query<{ id: string }>(
-      `SELECT id FROM organizations WHERE slug = 'newtonite-demo' LIMIT 1`
-    );
-    const defaultOrgId = orgRes.rows[0]?.id;
-    if (!defaultOrgId) {
-      throw new Error('Seed: could not find newtonite-demo org. Run migrations first.');
-    }
 
     for (const u of usersData) {
       let finalHash = passwordHash;
@@ -325,18 +325,19 @@ export async function runSeed(options: SeedOptions): Promise<void> {
         const dueAt = new Date(Date.now() + (globalIdx % 7 - 2) * 86400000).toISOString();
         const closedAt = (status === 'closed') ? new Date().toISOString() : null;
 
-        const pOffset = rowPlaceholders.length * 18;
+        const pOffset = rowPlaceholders.length * 19;
         rowPlaceholders.push(`(
           $${pOffset + 1}, $${pOffset + 2}, $${pOffset + 3}, $${pOffset + 4},
           $${pOffset + 5}, $${pOffset + 6}, $${pOffset + 7}, $${pOffset + 8},
           $${pOffset + 9}, $${pOffset + 10}, $${pOffset + 11}, $${pOffset + 12},
           $${pOffset + 13}, $${pOffset + 14}, $${pOffset + 15}, $${pOffset + 16},
-          $${pOffset + 17}, $${pOffset + 18}
+          $${pOffset + 17}, $${pOffset + 18}, $${pOffset + 19}
         )`);
 
         values.push(
           shortRef,
           team.id,
+          defaultOrgId,
           type,
           title,
           description,
@@ -358,7 +359,7 @@ export async function runSeed(options: SeedOptions): Promise<void> {
 
       const insertSql = `
         INSERT INTO items (
-          short_ref, team_id, type, title, description, status, priority,
+          short_ref, team_id, org_id, type, title, description, status, priority,
           reporter_id, assignee_id, due_at, requires_approval, approval_status,
           approved_by, resolution_note, tags, version, created_at, closed_at
         )
