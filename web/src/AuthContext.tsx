@@ -16,6 +16,10 @@ export interface UserProfile {
   name: string;
   is_org_admin: boolean;
   isOrgAdmin?: boolean;
+  orgId?: string;
+  orgName?: string;
+  orgSlug?: string;
+  mustChangePassword?: boolean;
   teams?: UserTeam[];
 }
 
@@ -24,6 +28,13 @@ export interface AuthContextValue {
   isLoading: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  registerOrg: (payload: {
+    orgName: string;
+    orgSlug?: string;
+    adminName: string;
+    adminEmail: string;
+    password: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   theme: 'light' | 'dark';
@@ -37,14 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
 
-  // Theme setup: check localStorage or prefers-color-scheme
+  // Theme setup: Light mode is default
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('newtonite_theme') as 'light' | 'dark' | null;
     if (saved === 'light' || saved === 'dark') return saved;
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    return 'light';
+    return 'light'; // Light by default
   });
 
   useEffect(() => {
@@ -78,7 +86,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     const res = await apiFetch<{ user: UserProfile }>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember: true }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setUser(res.data.user);
+  };
+
+  const registerOrg = async (payload: {
+    orgName: string;
+    orgSlug?: string;
+    adminName: string;
+    adminEmail: string;
+    password: string;
+  }) => {
+    const res = await apiFetch<{ user: UserProfile }>('/api/v1/auth/register-org', {
+      method: 'POST',
+      body: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json' },
     });
     setUser(res.data.user);
@@ -90,7 +113,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
-    // SEC-03: Synchronously purge TanStack Query cache so no previous user's data leaks
     queryClient.clear();
     setUser(null);
     window.location.href = '/login';
@@ -112,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         loading: isLoading,
         login,
+        registerOrg,
         logout,
         refreshUser,
         theme,

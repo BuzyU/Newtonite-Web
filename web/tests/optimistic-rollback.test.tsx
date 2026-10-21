@@ -108,6 +108,7 @@ describe('ItemDetail Optimistic Claim Race & Reconciliation', () => {
             isLoading: false,
             loading: false,
             login: vi.fn(),
+            registerOrg: vi.fn(),
             logout: vi.fn(),
             refreshUser: vi.fn(),
             theme: 'light',

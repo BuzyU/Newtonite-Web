@@ -86,7 +86,9 @@ export const Layout: React.FC = () => {
         <div className={styles.brand}>
           <div className={styles.brandTitle}>
             <span>NEWTONITE</span>
-            <span className={styles.brandTag}>OPS</span>
+            <span className={styles.brandTag}>
+              {user?.orgSlug ? user.orgSlug.toUpperCase().slice(0, 6) : 'OPS'}
+            </span>
           </div>
         </div>
 
@@ -125,6 +127,17 @@ export const Layout: React.FC = () => {
           <div className={styles.navGroupTitle} style={{ marginTop: 'var(--space-4)' }}>
             Organization
           </div>
+          {(user?.is_org_admin || user?.isOrgAdmin) && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `${styles.navItem} ${isActive ? styles.navItemActive : ''}`
+              }
+              id="nav-admin-console"
+            >
+              <span>Admin Console</span>
+            </NavLink>
+          )}
           <NavLink
             to="/teams"
             className={({ isActive }) =>
@@ -146,7 +159,7 @@ export const Layout: React.FC = () => {
         <div className={styles.sidebarFooter}>
           <div className={styles.userCard}>
             <span className={styles.userName}>
-              {user?.name} {user?.is_org_admin && <span style={{ fontSize: '10px', color: 'var(--color-accent)' }}>[Admin]</span>}
+              {user?.name} {(user?.is_org_admin || user?.isOrgAdmin) && <span style={{ fontSize: '10px', color: 'var(--color-accent)' }}>[Admin]</span>}
             </span>
             <span className={styles.userEmail} title={user?.email}>
               {user?.email}
@@ -157,16 +170,16 @@ export const Layout: React.FC = () => {
               type="button"
               className="btn btn-ghost"
               onClick={toggleTheme}
-              style={{ fontSize: '12px', padding: '4px 6px' }}
+              style={{ fontSize: '11px', padding: '4px 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}
               title="Toggle Light / Dark theme"
             >
-              {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
             </button>
             <button
               type="button"
               className="btn btn-ghost"
               onClick={logout}
-              style={{ fontSize: '12px', padding: '4px 6px', color: 'var(--color-danger)' }}
+              style={{ fontSize: '11px', padding: '4px 6px', color: 'var(--color-danger)' }}
               id="logout-button"
             >
               Sign out
@@ -187,7 +200,20 @@ export const Layout: React.FC = () => {
         {/* Top bar */}
         <header className={styles.topBar}>
           <form onSubmit={handleSearchSubmit} className={styles.searchBox}>
-            <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginRight: '4px' }}>🔍</span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ color: 'var(--color-text-muted)', marginRight: '6px', flexShrink: 0 }}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
             <input
               ref={searchInputRef}
               type="text"

@@ -63,13 +63,13 @@ function readSessionToken(req: Request): string | undefined {
  * Cookie options: HttpOnly, SameSite=Lax, host-only (no Domain), Path=/, Secure in production.
  * `remember` adds a persistent Max-Age; otherwise it is a browser-session cookie.
  */
-export function getCookieOptions(req: Request, remember = false) {
+export function getCookieOptions(req: Request, remember = true) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
     secure: isSecureRequest(req),
     path: '/',
-    ...(remember ? { maxAge: REMEMBER_IDLE_MS } : {}),
+    maxAge: remember ? REMEMBER_IDLE_MS : SESSION_IDLE_MS,
   };
 }
 
@@ -453,7 +453,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
 
     // Session fixation defence: drop any presented session, always mint a fresh token.
     await revokeByToken(readSessionToken(req));
-    await createSession(req, res, user.id, remember === true);
+    await createSession(req, res, user.id, remember !== false);
     await pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = $1`, [user.id]);
 
     res.status(200).json({
@@ -699,6 +699,278 @@ export async function meHandler(req: Request, res: Response): Promise<void> {
         requestId: req.requestId,
       },
     });
+  }
+}
+
+/**
+ * Register a new organization and master administrator account.
+ * Creates the organization, the admin user with argon2id hashed password,
+ * the 3 default operational teams (Operations, Engineering, Compliance),
+ * binds the admin to all teams, and creates an active 30-day session.
+ */
+export async function registerOrgHandler(req: Request, res: Response): Promise<void> {
+  const { orgName, orgSlug, adminName, adminEmail, password } = req.body || {};
+
+  if (!orgName || typeof orgName !== 'string' || !adminName || typeof adminName !== 'string' ||
+      !adminEmail || typeof adminEmail !== 'string' || !password || typeof password !== 'string') {
+    res.status(422).json({
+      error: { code: 'VALIDATION_ERROR', message: 'Organization name, admin name, work email, and password are required.', requestId: req.requestId },
+    });
+    return;
+  }
+
+  const cleanOrgName = orgName.trim();
+  const cleanAdminName = adminName.trim();
+  const cleanEmail = adminEmail.trim().toLowerCase();
+  const slug = (orgSlug && typeof orgSlug === 'string' && orgSlug.trim())
+    ? orgSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    : cleanOrgName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+
+  if (cleanOrgName.length < 2 || cleanOrgName.length > 120) {
+    res.status(422).json({
+      error: { code: 'VALIDATION_ERROR', message: 'Organization name must be between 2 and 120 characters.', requestId: req.requestId },
+    });
+    return;
+  }
+
+  const policyError = validatePasswordPolicy(password, { email: cleanEmail, name: cleanAdminName });
+  if (policyError) {
+    res.status(422).json({
+      error: { code: 'WEAK_PASSWORD', message: policyError, requestId: req.requestId },
+    });
+    return;
+  }
+
+  // Check if email already registered
+  const existingUser = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+  if (existingUser.rows.length > 0) {
+    res.status(409).json({
+      error: { code: 'EMAIL_ALREADY_EXISTS', message: 'An account with this email address already exists. Please log in.', requestId: req.requestId },
+    });
+    return;
+  }
+
+  // Check if org slug already taken; if so, append random suffix
+  let finalSlug = slug;
+  const existingOrg = await pool.query('SELECT id FROM organizations WHERE slug = $1', [finalSlug]);
+  if (existingOrg.rows.length > 0) {
+    finalSlug = `${slug}-${crypto.randomBytes(3).toString('hex')}`;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Create Organization
+    const orgRes = await client.query<{ id: string }>(
+      `INSERT INTO organizations (name, slug, status)
+       VALUES ($1, $2, 'active')
+       RETURNING id`,
+      [cleanOrgName, finalSlug]
+    );
+    const newOrgId = orgRes.rows[0].id;
+
+    // 2. Hash password & Create Admin User
+    const passwordHash = await hashPassword(password);
+    const userRes = await client.query<{ id: string; email: string; name: string }>(
+      `INSERT INTO users (email, password_hash, name, is_org_admin, org_id)
+       VALUES ($1, $2, $3, TRUE, $4)
+       RETURNING id, email, name`,
+      [cleanEmail, passwordHash, cleanAdminName, newOrgId]
+    );
+    const newUserId = userRes.rows[0].id;
+
+    // 3. Create Default Teams for Organization
+    const defaultTeams = [
+      { name: 'Operations & Support', slug: 'operations', prefix: 'OPS' },
+      { name: 'Platform Engineering', slug: 'engineering', prefix: 'ENG' },
+      { name: 'Payments & Compliance', slug: 'payments', prefix: 'PAY' },
+    ];
+
+    for (const t of defaultTeams) {
+      const teamRes = await client.query<{ id: string }>(
+        `INSERT INTO teams (name, slug, prefix, item_counter, org_id)
+         VALUES ($1, $2, $3, 1000, $4)
+         RETURNING id`,
+        [t.name, t.slug, t.prefix, newOrgId]
+      );
+      // Bind admin to all default teams with admin role
+      await client.query(
+        `INSERT INTO team_memberships (team_id, user_id, role)
+         VALUES ($1, $2, 'admin')`,
+        [teamRes.rows[0].id, newUserId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // 4. Create Session (persistent 30-day cookie)
+    await createSession(req, res, newUserId, true);
+
+    res.status(201).json({
+      user: await buildUserPayload({
+        id: newUserId,
+        email: cleanEmail,
+        name: cleanAdminName,
+        isOrgAdmin: true,
+        orgId: newOrgId,
+        orgName: cleanOrgName,
+        orgSlug: finalSlug,
+      }),
+      message: 'Organization created successfully.',
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    logger.error({ err, requestId: req.requestId }, 'Failed registering new organization');
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to create organization workspace.', requestId: req.requestId },
+    });
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * List all users within the admin's organization.
+ */
+export async function adminListUsersHandler(req: Request, res: Response): Promise<void> {
+  const orgId = req.user!.orgId;
+
+  try {
+    const usersRes = await pool.query<{
+      id: string;
+      email: string;
+      name: string;
+      is_org_admin: boolean;
+      is_active: boolean;
+      created_at: Date;
+      last_login_at: Date | null;
+    }>(
+      `SELECT id, email, name, is_org_admin, is_active, created_at, last_login_at
+       FROM users
+       WHERE org_id = $1
+       ORDER BY is_org_admin DESC, created_at DESC`,
+      [orgId]
+    );
+
+    // Fetch team memberships for all users in this org
+    const teamRes = await pool.query<{
+      user_id: string;
+      team_id: string;
+      team_name: string;
+      team_slug: string;
+      role: TeamRole;
+    }>(
+      `SELECT tm.user_id, tm.team_id, t.name AS team_name, t.slug AS team_slug, tm.role
+       FROM team_memberships tm
+       JOIN teams t ON t.id = tm.team_id
+       JOIN users u ON u.id = tm.user_id
+       WHERE u.org_id = $1 AND t.archived_at IS NULL`,
+      [orgId]
+    );
+
+    const userTeamsMap = new Map<string, Array<{ teamId: string; teamName: string; teamSlug: string; role: TeamRole }>>();
+    for (const r of teamRes.rows) {
+      if (!userTeamsMap.has(r.user_id)) userTeamsMap.set(r.user_id, []);
+      userTeamsMap.get(r.user_id)!.push({
+        teamId: r.team_id,
+        teamName: r.team_name,
+        teamSlug: r.team_slug,
+        role: r.role,
+      });
+    }
+
+    const users = usersRes.rows.map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      isOrgAdmin: u.is_org_admin,
+      isActive: u.is_active,
+      createdAt: u.created_at.toISOString(),
+      lastLoginAt: u.last_login_at ? u.last_login_at.toISOString() : null,
+      teams: userTeamsMap.get(u.id) || [],
+    }));
+
+    res.status(200).json({ users });
+  } catch (err) {
+    logger.error({ err, requestId: req.requestId }, 'Failed listing organization users');
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to retrieve team members.', requestId: req.requestId },
+    });
+  }
+}
+
+/**
+ * Create a new user within the organization.
+ */
+export async function adminCreateUserHandler(req: Request, res: Response): Promise<void> {
+  const orgId = req.user!.orgId;
+  const { name, email, password, isOrgAdmin, teamId, role } = req.body || {};
+
+  if (!name || typeof name !== 'string' || !email || typeof email !== 'string') {
+    res.status(422).json({
+      error: { code: 'VALIDATION_ERROR', message: 'Name and email are required.', requestId: req.requestId },
+    });
+    return;
+  }
+
+  const cleanName = name.trim();
+  const cleanEmail = email.trim().toLowerCase();
+  const generatedPassword = (password && typeof password === 'string' && password.length >= 8)
+    ? password
+    : `Ops!${crypto.randomBytes(6).toString('base64url')}9`;
+
+  const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
+  if (existing.rows.length > 0) {
+    res.status(409).json({
+      error: { code: 'EMAIL_ALREADY_EXISTS', message: 'A user with this email address already exists.', requestId: req.requestId },
+    });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const passwordHash = await hashPassword(generatedPassword);
+    const userRes = await client.query<{ id: string; email: string; name: string }>(
+      `INSERT INTO users (email, password_hash, name, is_org_admin, org_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, email, name`,
+      [cleanEmail, passwordHash, cleanName, !!isOrgAdmin, orgId]
+    );
+    const newUserId = userRes.rows[0].id;
+
+    if (teamId && typeof teamId === 'string') {
+      const validRoles = ['viewer', 'member', 'lead', 'admin'];
+      const memberRole = validRoles.includes(role) ? role : 'member';
+      await client.query(
+        `INSERT INTO team_memberships (team_id, user_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+        [teamId, newUserId, memberRole]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      user: {
+        id: newUserId,
+        email: cleanEmail,
+        name: cleanName,
+        isOrgAdmin: !!isOrgAdmin,
+      },
+      temporaryPassword: generatedPassword,
+      message: 'User account created successfully.',
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    logger.error({ err, requestId: req.requestId }, 'Failed creating organization user');
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to create user account.', requestId: req.requestId },
+    });
+  } finally {
+    client.release();
   }
 }
 

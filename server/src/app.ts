@@ -11,7 +11,11 @@ import {
   logoutHandler,
   meHandler,
   requireAuth,
+  requireOrgAdmin,
   csrfProtection,
+  registerOrgHandler,
+  adminListUsersHandler,
+  adminCreateUserHandler,
 } from './auth.js';
 import {
   listItemsHandler,
@@ -135,6 +139,7 @@ export function createApp() {
   // Authentication Routes
   // --------------------------------------------------------------------------
   app.post('/api/v1/auth/login', csrfProtection, loginHandler);
+  app.post('/api/v1/auth/register-org', csrfProtection, registerOrgHandler);
   app.post('/api/v1/auth/google', csrfProtection, googleLoginHandler);
   app.post('/api/v1/auth/logout', csrfProtection, logoutHandler);
   app.get('/api/v1/auth/me', requireAuth, meHandler);
@@ -176,8 +181,10 @@ export function createApp() {
   app.get('/api/v1/items/:id/activity', requireAuth, getItemActivityHandler);
 
   // --------------------------------------------------------------------------
-  // Admin Routes (Dead-Letter Outbox inspection and retry)
+  // Admin Routes (Organization management, users, and dead-letter outbox)
   // --------------------------------------------------------------------------
+  app.get('/api/v1/admin/users', requireAuth, requireOrgAdmin, adminListUsersHandler);
+  app.post('/api/v1/admin/users', requireAuth, requireOrgAdmin, csrfProtection, adminCreateUserHandler);
   app.get('/api/v1/admin/dead-letters', requireAuth, listDeadLettersHandler);
   app.post('/api/v1/admin/dead-letters/:id/retry', requireAuth, csrfProtection, retryDeadLetterHandler);
 
