@@ -602,8 +602,11 @@ export async function claimItemHandler(req: Request, res: Response): Promise<voi
     }
 
     // 2. Perform conditional atomic update
-    // If the item status was 'triaged' or 'new', claiming moves it to 'in_progress'
-    const targetStatus = (item.status === 'new' || item.status === 'triaged') ? 'in_progress' : item.status;
+    // In accordance with state-machine workflow rules (T2, transitions.ts):
+    // Claiming a 'new' item moves it to 'triaged' (with assignee set).
+    // Subsequent progression 'triaged -> in_progress' is a separate intentional transition.
+    // Claiming unassigned items in other active states ('blocked', 'awaiting_approval', 'triaged') retains their status.
+    const targetStatus = item.status === 'new' ? 'triaged' : item.status;
 
     const claimRes = await client.query(
       `UPDATE items

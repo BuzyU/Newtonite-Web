@@ -161,4 +161,93 @@ describe('State Machine: Workflow transitions and separation of duties', () => {
     expect(distinctLeadApproveRes.body.item.approval_status).toBe('approved');
     expect(distinctLeadApproveRes.body.item.approved_by).toBe(lead2Auth.user.id);
   });
+
+  it('T2: claiming a new item moves it to triaged; claiming a blocked or awaiting_approval item keeps its status', async () => {
+    const client = authenticatedRequest(lead1Auth);
+    const memberClient = authenticatedRequest(memberAuth);
+
+    // 1. Create a fresh item in status 'new'
+    const createNewRes = await client
+      .post('/api/v1/items')
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        teamId: team.id,
+        type: 'operational_task',
+        title: 'Fresh new item for claim testing',
+        description: 'Verifying claim moves new -> triaged',
+        assigneeId: null,
+      });
+    expect(createNewRes.status).toBe(201);
+    expect(createNewRes.body.item.status).toBe('new');
+    const newItemId = createNewRes.body.item.id;
+
+    // Member claims the 'new' item
+    const claimNewRes = await memberClient
+      .post(`/api/v1/items/${newItemId}/claim`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send();
+
+    expect(claimNewRes.status).toBe(200);
+    expect(claimNewRes.body.item.assignee_id).toBe(memberAuth.user.id);
+    // MUST move to 'triaged' (not 'in_progress'), preserving the state machine
+    expect(claimNewRes.body.item.status).toBe('triaged');
+
+    // 2. Create an item, transition it to 'in_progress', then 'blocked', then unassign it (or reassign)
+    const createBlockedRes = await client
+      .post('/api/v1/items')
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        teamId: team.id,
+        type: 'operational_task',
+        title: 'Item to be blocked and claimed',
+        description: 'Verifying claim on blocked preserves blocked status',
+        assigneeId: lead1Auth.user.id,
+      });
+    const blockedItemId = createBlockedRes.body.item.id;
+    let version = createBlockedRes.body.item.version;
+
+    // Move new -> triaged -> in_progress -> blocked
+    const triageRes = await client
+      .post(`/api/v1/items/${blockedItemId}/transition`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .set('If-Match', `"${version}"`)
+      .send({ status: 'triaged' });
+    version = triageRes.body.item.version;
+
+    const progRes = await client
+      .post(`/api/v1/items/${blockedItemId}/transition`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .set('If-Match', `"${version}"`)
+      .send({ status: 'in_progress' });
+    version = progRes.body.item.version;
+
+    const blockRes = await client
+      .post(`/api/v1/items/${blockedItemId}/transition`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .set('If-Match', `"${version}"`)
+      .send({ status: 'blocked' });
+    version = blockRes.body.item.version;
+
+    // Unassign so it can be claimed
+    const unassignRes = await client
+      .patch(`/api/v1/items/${blockedItemId}`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .set('If-Match', `"${version}"`)
+      .send({ assigneeId: null });
+    expect(unassignRes.status).toBe(200);
+    expect(unassignRes.body.item.status).toBe('blocked');
+    expect(unassignRes.body.item.assignee_id).toBeNull();
+
+    // Member claims the unassigned blocked item
+    const claimBlockedRes = await memberClient
+      .post(`/api/v1/items/${blockedItemId}/claim`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send();
+
+    expect(claimBlockedRes.status).toBe(200);
+    expect(claimBlockedRes.body.item.assignee_id).toBe(memberAuth.user.id);
+    // Claiming a blocked item MUST keep its status as 'blocked'
+    expect(claimBlockedRes.body.item.status).toBe('blocked');
+  });
 });
+
