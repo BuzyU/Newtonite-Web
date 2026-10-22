@@ -87,6 +87,12 @@ describe('Optional Continue with Google via Supabase Auth', () => {
       }))
     );
 
+    const beforeCheck = await pool.query(
+      `SELECT count(*)::int as count FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE LOWER(u.email) = 'marcus.lead@newtonite.local'`
+    );
+
     const res = await request(app)
       .post('/api/v1/auth/google')
       .set('X-Requested-With', 'XMLHttpRequest')
@@ -94,15 +100,15 @@ describe('Optional Continue with Google via Supabase Auth', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('UNVERIFIED_EMAIL');
+    expect(res.headers['set-cookie']).toBeUndefined();
 
     // Confirm no session was created for this attempt
-    const sessionCheck = await pool.query(
-      `SELECT s.id FROM sessions s
+    const afterCheck = await pool.query(
+      `SELECT count(*)::int as count FROM sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE LOWER(u.email) = 'marcus.lead@newtonite.local'
-         AND s.created_at > NOW() - INTERVAL '5 seconds'`
+       WHERE LOWER(u.email) = 'marcus.lead@newtonite.local'`
     );
-    expect(sessionCheck.rows).toHaveLength(0);
+    expect(afterCheck.rows[0].count).toBe(beforeCheck.rows[0].count);
   });
 
   it('rejects provider tokens that do not come from Google provider', async () => {
