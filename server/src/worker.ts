@@ -466,7 +466,7 @@ export async function drainOutbox(maxMs = 8000, customPool?: pg.Pool): Promise<{
   return { processed, batches };
 }
 
-/** Daily maintenance: SLA scan plus pruning of sessions, rate limits and the change feed. */
+/** Daily maintenance: SLA scan plus pruning of sessions, rate limits, change feed, and old outbox events (T4). */
 export async function runMaintenance(customPool?: pg.Pool): Promise<Record<string, number>> {
   const activePool = customPool || pool;
   const worker = new OutboxWorker(activePool);
@@ -477,11 +477,15 @@ export async function runMaintenance(customPool?: pg.Pool): Promise<Record<strin
   );
   const rateLimits = await activePool.query(`DELETE FROM rate_limits WHERE window_start < NOW() - INTERVAL '2 hours'`);
   const changeFeed = await activePool.query(`DELETE FROM change_feed WHERE created_at < NOW() - INTERVAL '1 day'`);
+  const outboxEvents = await activePool.query(
+    `DELETE FROM outbox_events WHERE status = 'completed' AND processed_at < NOW() - INTERVAL '14 days'`
+  );
   return {
     slaNotifications,
     sessionsPruned: sessions.rowCount ?? 0,
     rateLimitsPruned: rateLimits.rowCount ?? 0,
     changeFeedPruned: changeFeed.rowCount ?? 0,
+    outboxEventsPruned: outboxEvents.rowCount ?? 0,
   };
 }
 

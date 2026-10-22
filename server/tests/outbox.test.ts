@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import crypto from 'crypto';
 import { pool } from '../src/db.js';
-import { OutboxWorker } from '../src/worker.js';
+import { OutboxWorker, runMaintenance } from '../src/worker.js';
 import { getTeamBySlug, getUserByEmail } from './helpers.js';
 
 describe('Outbox Worker & Reliable Async Processing', () => {
@@ -201,5 +201,48 @@ describe('Outbox Worker & Reliable Async Processing', () => {
       worker2.stop();
     }
   });
+
+  it('T4: runMaintenance prunes completed outbox events older than 14 days, preserving recent and dead_letter rows', async () => {
+    const oldCompletedId = crypto.randomUUID();
+    const recentCompletedId = crypto.randomUUID();
+    const deadLetterId = crypto.randomUUID();
+
+    // 1. Old completed event (processed 20 days ago) -> MUST be pruned
+    await pool.query(
+      `INSERT INTO outbox_events (id, event_type, payload, status, processed_at)
+       VALUES ($1, 'item.created', '{}'::jsonb, 'completed', NOW() - INTERVAL '20 days')`,
+      [oldCompletedId]
+    );
+
+    // 2. Recent completed event (processed 2 days ago) -> MUST be preserved
+    await pool.query(
+      `INSERT INTO outbox_events (id, event_type, payload, status, processed_at)
+       VALUES ($1, 'item.created', '{}'::jsonb, 'completed', NOW() - INTERVAL '2 days')`,
+      [recentCompletedId]
+    );
+
+    // 3. Dead letter event (processed 20 days ago) -> MUST be preserved for administrative inspection
+    await pool.query(
+      `INSERT INTO outbox_events (id, event_type, payload, status, processed_at)
+       VALUES ($1, 'item.created', '{}'::jsonb, 'dead_letter', NOW() - INTERVAL '20 days')`,
+      [deadLetterId]
+    );
+
+    // Run maintenance
+    const res = await runMaintenance(pool);
+    expect(res.outboxEventsPruned).toBeGreaterThanOrEqual(1);
+
+    // Verify database state: only oldCompletedId was deleted
+    const checkRes = await pool.query(
+      `SELECT id, status FROM outbox_events WHERE id = ANY($1::uuid[])`,
+      [[oldCompletedId, recentCompletedId, deadLetterId]]
+    );
+
+    const remainingIds = checkRes.rows.map((r) => r.id);
+    expect(remainingIds).not.toContain(oldCompletedId);
+    expect(remainingIds).toContain(recentCompletedId);
+    expect(remainingIds).toContain(deadLetterId);
+  });
 });
+
 
