@@ -62,6 +62,7 @@ async function capture() {
 
   // Wait for redirect to Attention Home
   await page.waitForURL('http://localhost:5173/');
+  await page.waitForSelector('.skeleton', { state: 'detached', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1000);
 
   // 2. Attention Home

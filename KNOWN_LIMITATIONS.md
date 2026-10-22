@@ -13,6 +13,7 @@ This document provides a truthful and honest accounting of architectural trade-o
 
 ### 1.2 In-Process Background Worker on Free Tier
 - **Limitation:** On Render's free tier, background workers are not supported as separate services. The worker therefore runs inside the Express API process (`RUN_WORKER_IN_API=true`). When the API spins down due to inactivity, background outbox processing pauses until an incoming HTTP request wakes the instance.
+- **Change Feed & Outbox Accumulation:** During extended sleep periods, `change_feed` rows and pending outbox events accumulate in PostgreSQL without active pruning. When an incoming request wakes the service, the worker resumes and drains the accumulated backlog and maintenance cleans up stale rows.
 - **Integrity Guarantee:** Outbox rows persist transactionally in PostgreSQL. As soon as the service wakes, the worker resumes and drains the accumulated backlog without loss.
 
 ### 1.3 Supabase Free-Tier Inactivity Pause
@@ -62,4 +63,20 @@ This document provides a truthful and honest accounting of architectural trade-o
 - **SAML / OIDC Single Sign-On:** Authenticated via signed, secure `httpOnly` cookies with Argon2id password hashing. Corporate SAML/SSO was deferred to maintain simplicity.
 - **Rich-Text WYSIWYG Editor:** Item descriptions and comments use clean plain text and markdown.
 - **Multi-Region Database Replication:** Single primary database in Singapore region (paired with Render Singapore instance).
+
+---
+
+## 3. Fixed After Self-Review
+
+Following comprehensive automated audits and review under real operational pressures, the following enhancements and hardening fixes were applied:
+
+1. **Client Idempotency Key Retention Across Retries:** Added the `useIdempotencyKey()` hook to maintain stable client idempotency keys across manual user retries (e.g. network timeout or 503) and only regenerate fresh keys upon verified mutation success.
+2. **Workflow State Machine Alignment for Claims:** Unified the claim action and state transition validator so claiming a `new` item moves it to `triaged` (with assignee set), preserving `transitions.ts` as the single source of truth.
+3. **Search Index Acceleration via CTE UNION:** Refactored search candidate discovery from full-table sequential scan into an index-friendly `WITH hits AS (SELECT ... UNION ...)` common table expression with strict `%`, `_`, and `\` wildcard escaping, enabling GIN full-text and `pg_trgm` trigram index scans for both rare and common search terms.
+4. **Outbox Maintenance Pruning:** Added automated cleanup of completed outbox events older than 14 days during periodic maintenance, while preserving all dead-letter records for administrator review.
+5. **Input Validation Hardening & Separation of Duties:** Added strict UUID and enum validation across all API query parameters (returning 422 `VALIDATION_ERROR` rather than 500 errors), enforced separation of duties on item rejection (creators/assignees cannot reject), and added dashboard section totals with "+N more" and "View all" filters.
+6. **Test Isolation & Safety Guard:** Isolated PostgreSQL-backed rate limit counters between test runs to eliminate cross-suite test leakage, and implemented a strict runtime safety guard that immediately aborts tests if `DATABASE_URL` does not point to a dedicated test database.
+7. **Operational UI Polish:** Upgraded the work queue and attention interfaces with high-contrast dual color+text badges for status and priority, explicit overdue indicators for items past `due_at`, non-wrapping monospace references, left-aligned table headers, and `prefers-reduced-motion` compliance.
+8. **Item Detail Crash Prevention:** Guarded activity timeline and tag collections against `undefined` array access, eliminating `Cannot read properties of undefined (reading 'length')` errors when rendering items.
+
 

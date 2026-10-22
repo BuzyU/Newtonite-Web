@@ -116,10 +116,11 @@ export const ItemDetail: React.FC = () => {
       setEditTitle(res.item.title);
       setEditDescription(res.item.description);
       setEditPriority(res.item.priority);
-      setActivityItems(res.activity);
-      if (res.activity.length > 0) {
-        setActivityCursor(res.activity[res.activity.length - 1].id);
-        setHasMoreActivity(res.activity.length >= 20);
+      const activity = res.activity || [];
+      setActivityItems(activity);
+      if (activity.length > 0) {
+        setActivityCursor(activity[activity.length - 1].id);
+        setHasMoreActivity(activity.length >= 20);
       }
       return res;
     },
@@ -274,10 +275,11 @@ export const ItemDetail: React.FC = () => {
       const res = await api.get<{ activity: any[]; has_more: boolean }>(
         `/items/${id}/activity?cursor=${activityCursor}&limit=20`
       );
-      setActivityItems((prev) => [...prev, ...res.activity]);
-      setHasMoreActivity(res.has_more);
-      if (res.activity.length > 0) {
-        setActivityCursor(res.activity[res.activity.length - 1].id);
+      const activity = res.activity || [];
+      setActivityItems((prev) => [...prev, ...activity]);
+      setHasMoreActivity(res.has_more ?? false);
+      if (activity.length > 0) {
+        setActivityCursor(activity[activity.length - 1].id);
       }
     } catch (err) {
       console.error('Failed to load more activity:', err);
@@ -1110,7 +1112,7 @@ export const ItemDetail: React.FC = () => {
               <div>
                 <span style={{ color: 'var(--color-text-muted)', display: 'block' }}>Tags</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                  {item.tags?.length > 0 ? (
+                  {(item.tags && item.tags.length > 0) ? (
                     item.tags.map((t) => (
                       <span
                         key={t}

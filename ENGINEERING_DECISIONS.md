@@ -73,12 +73,12 @@ This document records the foundational architecture and engineering trade-offs m
 
 1. **Heavy ORM (Prisma / TypeORM):** Avoided to maintain full, uninhibited control over SQL queries, locks (`SKIP LOCKED`), advisory locks, and generated columns. Plain `pg` with parameterized queries delivers superior predictability and zero hidden query generation overhead.
 2. **External Broker / Cache (Kafka / RabbitMQ / Redis):** Avoided to keep local setup trivial (`docker compose up` or local Node + Postgres) and keep hosted architecture far within free-tier resource limits.
-3. **WebSockets Server:** Avoided in favor of Server-Sent Events (SSE). SSE operates over standard HTTP, traverses proxies effortlessly, and aligns with the one-way push pattern where clients refetch through the REST API.
+3. **WebSockets Server:** Avoided in favor of Server-Sent Events (SSE). SSE operates over standard HTTP, traverses proxies effortlessly, and aligns with the one-way push pattern where clients refetch through the REST API. Client-side resilience is reinforced with automatic fallback to polling when proxies buffer or terminate SSE streams.
 4. **Client-Side Authorization Authority:** Avoided. UI hides unavailable actions for cleanliness, but the backend API remains the sole authorization authority, rejecting unauthorized actions with 403 or 404.
 
 ---
 
-## 8. Organization Bootstrap & Atomic Tenant Creation
+## 7. Organization Bootstrap & Atomic Tenant Creation
 
 - **Context:** An organization onboarding workflow must safely provision a tenant workspace, its initial administrator, and its operational foundation without allowing privilege escalation or leaving dangling records on network/database failure.
 - **Options Considered:**
@@ -96,7 +96,7 @@ This document records the foundational architecture and engineering trade-offs m
 
 ---
 
-## 9. Role Separation: Organization Administrator vs. Team-Level Roles
+## 8. Role Separation: Organization Administrator vs. Team-Level Roles
 
 - **Context:** Large operational organizations require clear boundaries between platform administration (inviting employees, provisioning credentials, auditing rosters) and operational triage (creating items, executing workflow transitions, approving releases).
 - **Decision:** Explicit architectural separation between organization-level and team-level roles:
@@ -110,19 +110,19 @@ This document records the foundational architecture and engineering trade-offs m
 
 ---
 
-## 10. Session Security & Cookie Lifecycle
+## 9. Session Security & Cookie Lifecycle
 
 - **Context:** Authentication must survive page reloads and browser restarts without vulnerable token storage in `localStorage` or `sessionStorage`.
 - **Decision:** Server-managed sessions backed by PostgreSQL `sessions` table and signed `httpOnly` cookies:
   - **Cookie Flags:** `httpOnly: true`, `SameSite: 'lax'`, `path: '/'`, `secure: true` in production over HTTPS.
   - **Session Duration:** 30 days (`maxAge: 30 * 24 * 3600 * 1000`) for "Remember Me", 12 hours for standard session.
   - **CSRF Defense:** State-changing requests (`POST`, `PATCH`, `PUT`, `DELETE`) require the custom header `X-Requested-With: XMLHttpRequest` and undergo strict origin checking.
-  - **Removal of Third-Party Dependencies:** Google OAuth login was removed entirely. Authentication relies on secure email + Argon2id password verification.
+  - **Authentication & Optional Google OAuth:** Primary authentication relies on secure email + Argon2id password verification with server-managed sessions. Google OAuth (`/api/v1/auth/google`) is retained as an optional identity provider controlled by the `GOOGLE_LOGIN_ENABLED` environment variable (disabled by default in production and covered by automated tests in `google_auth.test.ts`), preventing external service dependencies while providing enterprise flexibility.
   - **Session Invalidation:** Logout revokes the server session in PostgreSQL, clears the browser cookie, and purges all user-scoped query caches.
 
 ---
 
-## 11. Visual Design Direction: "Quiet Operations"
+## 10. Visual Design Direction: "Quiet Operations"
 
 - **Context:** Operational staff triage incidents and approvals under intense cognitive load. Flashy marketing aesthetics, animated blobs, glowing purple/cyan AI gradients, and decorative emojis increase fatigue and degrade usability.
 - **Decision:** "Quiet Operations" design system:
@@ -130,5 +130,6 @@ This document records the foundational architecture and engineering trade-offs m
   - **Color Palette:** Pure white and soft zinc/slate surfaces (`#FFFFFF`, `#F8FAFC`, `#F1F5F9`), deep charcoal high-contrast text (`#0F172A`), muted secondary labels (`#64748B`), and a single restrained slate-blue accent (`#2563EB`). Zero AI neon glowing effects.
   - **Typography:** IBM Plex Sans for editorial clarity and IBM Plex Mono for technical identifiers (`OPS-1042`, ETags, timestamps).
   - **Iconography:** Clean, accessible SVG vector icons and text labels. Zero emojis in navigation.
+
 
 
