@@ -268,6 +268,105 @@ a {
 .prio-medium { color: var(--prio-medium); }
 .prio-low { color: var(--prio-low); }
 
+/* Status & Priority Badges (Color + Text) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Semantic Status Badges */
+.badge-status-new {
+  color: var(--status-new);
+  background-color: rgba(72, 101, 129, 0.12);
+  border: 1px solid rgba(72, 101, 129, 0.25);
+}
+.badge-status-triaged {
+  color: var(--status-triaged);
+  background-color: rgba(11, 105, 163, 0.12);
+  border: 1px solid rgba(11, 105, 163, 0.25);
+}
+.badge-status-in_progress {
+  color: var(--status-in-progress);
+  background-color: rgba(178, 94, 0, 0.12);
+  border: 1px solid rgba(178, 94, 0, 0.25);
+}
+.badge-status-blocked {
+  color: var(--status-blocked);
+  background-color: rgba(197, 39, 7, 0.12);
+  border: 1px solid rgba(197, 39, 7, 0.35);
+  font-weight: 600;
+}
+.badge-status-awaiting_approval {
+  color: var(--status-awaiting-approval);
+  background-color: rgba(105, 58, 201, 0.12);
+  border: 1px solid rgba(105, 58, 201, 0.25);
+}
+.badge-status-resolved {
+  color: var(--status-resolved);
+  background-color: rgba(24, 121, 78, 0.12);
+  border: 1px solid rgba(24, 121, 78, 0.25);
+}
+.badge-status-closed {
+  color: var(--status-closed);
+  background-color: rgba(98, 109, 122, 0.12);
+  border: 1px solid rgba(98, 109, 122, 0.25);
+}
+
+/* Priority Badges - Urgent stands out with high-contrast alert styling */
+.badge-priority-urgent {
+  color: #ffffff !important;
+  background-color: var(--prio-urgent) !important;
+  border: 1px solid var(--prio-urgent) !important;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  box-shadow: 0 1px 2px rgba(197, 39, 7, 0.25);
+}
+.badge-priority-high {
+  color: var(--prio-high);
+  background-color: rgba(178, 94, 0, 0.12);
+  border: 1px solid rgba(178, 94, 0, 0.3);
+  font-weight: 600;
+}
+.badge-priority-medium {
+  color: var(--prio-medium);
+  background-color: rgba(72, 101, 129, 0.1);
+  border: 1px solid rgba(72, 101, 129, 0.2);
+}
+.badge-priority-low {
+  color: var(--prio-low);
+  background-color: rgba(94, 104, 117, 0.08);
+  border: 1px solid rgba(94, 104, 117, 0.18);
+}
+
+/* Overdue Badge / Indicator - Distinct alert color and badge */
+.badge-overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-danger);
+  background-color: var(--color-danger-bg);
+  border: 1px solid rgba(197, 39, 7, 0.35);
+  white-space: nowrap;
+}
+
+/* Table header formatting */
+.table th,
+th {
+  text-align: left;
+}
+
 /* Skeleton Placeholder */
 .skeleton {
   background: linear-gradient(
@@ -284,4 +383,14 @@ a {
 @keyframes skeleton-pulse {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Accessibility: Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

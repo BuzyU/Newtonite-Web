@@ -21,9 +21,15 @@ interface WorkItem {
 
 interface ListResponse {
   items: WorkItem[];
-  next_cursor: string | null;
-  has_more: boolean;
-  total_estimate: number;
+  next_cursor?: string | null;
+  has_more?: boolean;
+  total_estimate?: number;
+  pagination?: {
+    limit: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+    total?: number;
+  };
 }
 
 interface Team {
@@ -82,8 +88,8 @@ export const AllWorkList: React.FC = () => {
   useEffect(() => {
     if (data) {
       setAccumulatedItems(data.items);
-      setCurrentCursor(data.next_cursor);
-      setHasNextPage(data.has_more);
+      setCurrentCursor(data.next_cursor ?? data.pagination?.nextCursor ?? null);
+      setHasNextPage(Boolean(data.has_more ?? data.pagination?.hasMore));
       setSelectedIndex(0);
     }
   }, [data]);
@@ -93,8 +99,8 @@ export const AllWorkList: React.FC = () => {
     try {
       const res = await api.get<ListResponse>(`/items?${buildQueryString(currentCursor)}`);
       setAccumulatedItems((prev) => [...prev, ...res.items]);
-      setCurrentCursor(res.next_cursor);
-      setHasNextPage(res.has_more);
+      setCurrentCursor(res.next_cursor ?? res.pagination?.nextCursor ?? null);
+      setHasNextPage(Boolean(res.has_more ?? res.pagination?.hasMore));
     } catch (err) {
       console.error('Failed to load more items:', err);
     }
@@ -245,7 +251,11 @@ export const AllWorkList: React.FC = () => {
         )}
 
         <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          {accumulatedItems.length} items shown
+          {data?.pagination?.total !== undefined
+            ? `${accumulatedItems.length} of ${data.pagination.total.toLocaleString()}`
+            : hasNextPage
+            ? `${accumulatedItems.length} loaded, more available`
+            : `${accumulatedItems.length} items`}
         </div>
       </div>
 
@@ -294,18 +304,25 @@ export const AllWorkList: React.FC = () => {
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ width: '90px' }}>Ref</th>
-                <th style={{ width: '100px' }}>Status</th>
-                <th style={{ width: '80px' }}>Priority</th>
-                <th>Title</th>
-                <th style={{ width: '120px' }}>Team</th>
-                <th style={{ width: '130px' }}>Assignee</th>
-                <th style={{ width: '110px' }}>Updated</th>
+                <th style={{ width: '90px', textAlign: 'left', whiteSpace: 'nowrap' }}>Ref</th>
+                <th style={{ width: '120px', textAlign: 'left' }}>Status</th>
+                <th style={{ width: '90px', textAlign: 'left' }}>Priority</th>
+                <th style={{ textAlign: 'left' }}>Title</th>
+                <th style={{ width: '120px', textAlign: 'left' }}>Team</th>
+                <th style={{ width: '130px', textAlign: 'left' }}>Assignee</th>
+                <th style={{ width: '120px', textAlign: 'left' }}>Due / Updated</th>
               </tr>
             </thead>
             <tbody>
               {accumulatedItems.map((item, index) => {
                 const isSelected = index === selectedIndex;
+                const isOverdue = Boolean(
+                  item.due_at &&
+                  item.status !== 'resolved' &&
+                  item.status !== 'closed' &&
+                  new Date(item.due_at).getTime() < Date.now()
+                );
+
                 return (
                   <tr
                     key={item.id}
@@ -318,8 +335,8 @@ export const AllWorkList: React.FC = () => {
                       backgroundColor: isSelected ? 'var(--color-accent-subtle)' : undefined,
                     }}
                   >
-                    <td>
-                      <span className="mono" style={{ fontWeight: 600, fontSize: '12px' }}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span className="mono" style={{ fontWeight: 600, fontSize: '12px', whiteSpace: 'nowrap' }}>
                         {item.short_ref}
                       </span>
                     </td>
@@ -334,10 +351,15 @@ export const AllWorkList: React.FC = () => {
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
                           {item.title}
                         </span>
+                        {isOverdue && (
+                          <span className="badge-overdue" title={`Overdue since ${new Date(item.due_at!).toLocaleDateString()}`}>
+                            ⚠️ Overdue
+                          </span>
+                        )}
                         {item.tags?.map((t) => (
                           <span
                             key={t}
@@ -364,13 +386,25 @@ export const AllWorkList: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                      {new Date(item.last_activity_at).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                    <td style={{ color: 'var(--color-text-muted)', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      {isOverdue && item.due_at ? (
+                        <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>
+                          Due: {new Date(item.due_at).toLocaleDateString()}
+                        </span>
+                      ) : item.due_at ? (
+                        <span>
+                          Due: {new Date(item.due_at).toLocaleDateString()}
+                        </span>
+                      ) : (
+                        <span>
+                          {new Date(item.last_activity_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
