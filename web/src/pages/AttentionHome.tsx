@@ -27,6 +27,13 @@ interface AttentionData {
   urgent_unassigned: AttentionItem[];
   mentions: AttentionItem[];
   gone_quiet: AttentionItem[];
+  totals?: {
+    awaiting_approval?: number;
+    mine_due_soon?: number;
+    urgent_unassigned?: number;
+    mentions?: number;
+    gone_quiet?: number;
+  };
 }
 
 export const AttentionHome: React.FC = () => {
@@ -127,12 +134,15 @@ export const AttentionHome: React.FC = () => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-danger)' }}>
-                Urgent & Unassigned ({urgentUnassigned.length})
+                Urgent & Unassigned ({urgentUnassigned.length}{data?.totals?.urgent_unassigned && data.totals.urgent_unassigned > urgentUnassigned.length ? ` of ${data.totals.urgent_unassigned}` : ''})
               </span>
               <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                 Items requiring immediate team triage
               </span>
             </div>
+            <Link to="/work?priority=urgent&assignee=unassigned" className="btn btn-ghost" style={{ fontSize: '12px', padding: '2px 8px' }}>
+              View all
+            </Link>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -187,6 +197,16 @@ export const AttentionHome: React.FC = () => {
               </div>
             ))}
           </div>
+          {((data?.totals?.urgent_unassigned ?? 0) > urgentUnassigned.length) && (
+            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontSize: '12px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                +{(data?.totals?.urgent_unassigned ?? 0) - urgentUnassigned.length} more
+              </span>
+              <Link to="/work?priority=urgent&assignee=unassigned" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                View all →
+              </Link>
+            </div>
+          )}
         </section>
       )}
 
@@ -210,12 +230,17 @@ export const AttentionHome: React.FC = () => {
               justifyContent: 'space-between',
             }}
           >
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-warning)' }}>
-              Awaiting Lead Approval ({awaiting.length})
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-              Pending your review as team lead
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-warning)' }}>
+                Awaiting Lead Approval ({awaiting.length}{data?.totals?.awaiting_approval && data.totals.awaiting_approval > awaiting.length ? ` of ${data.totals.awaiting_approval}` : ''})
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                Pending your review as team lead
+              </span>
+            </div>
+            <Link to="/work?status=awaiting_approval" className="btn btn-ghost" style={{ fontSize: '12px', padding: '2px 8px' }}>
+              View all
+            </Link>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -259,6 +284,16 @@ export const AttentionHome: React.FC = () => {
               </div>
             ))}
           </div>
+          {((data?.totals?.awaiting_approval ?? 0) > awaiting.length) && (
+            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontSize: '12px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                +{(data?.totals?.awaiting_approval ?? 0) - awaiting.length} more
+              </span>
+              <Link to="/work?status=awaiting_approval" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                View all →
+              </Link>
+            </div>
+          )}
         </section>
       )}
 
@@ -281,12 +316,17 @@ export const AttentionHome: React.FC = () => {
               justifyContent: 'space-between',
             }}
           >
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              Due Soon or Overdue ({dueSoon.length})
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-              Assigned to you
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                Due Soon or Overdue ({dueSoon.length}{data?.totals?.mine_due_soon && data.totals.mine_due_soon > dueSoon.length ? ` of ${data.totals.mine_due_soon}` : ''})
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                Assigned to you
+              </span>
+            </div>
+            <Link to="/work?assignee=me" className="btn btn-ghost" style={{ fontSize: '12px', padding: '2px 8px' }}>
+              View all
+            </Link>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -338,6 +378,16 @@ export const AttentionHome: React.FC = () => {
               );
             })}
           </div>
+          {((data?.totals?.mine_due_soon ?? 0) > dueSoon.length) && (
+            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontSize: '12px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                +{(data?.totals?.mine_due_soon ?? 0) - dueSoon.length} more
+              </span>
+              <Link to="/work?assignee=me" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                View all →
+              </Link>
+            </div>
+          )}
         </section>
       )}
 
@@ -361,7 +411,7 @@ export const AttentionHome: React.FC = () => {
             }}
           >
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              Recent Mentions ({mentions.length})
+              Recent Mentions ({mentions.length}{data?.totals?.mentions && data.totals.mentions > mentions.length ? ` of ${data.totals.mentions}` : ''})
             </span>
           </div>
 
@@ -397,6 +447,13 @@ export const AttentionHome: React.FC = () => {
               </div>
             ))}
           </div>
+          {((data?.totals?.mentions ?? 0) > mentions.length) && (
+            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontSize: '12px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                +{(data?.totals?.mentions ?? 0) - mentions.length} more
+              </span>
+            </div>
+          )}
         </section>
       )}
 
@@ -419,12 +476,17 @@ export const AttentionHome: React.FC = () => {
               justifyContent: 'space-between',
             }}
           >
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              Gone Quiet ({goneQuiet.length})
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-              No updates in 3+ days
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                Gone Quiet ({goneQuiet.length}{data?.totals?.gone_quiet && data.totals.gone_quiet > goneQuiet.length ? ` of ${data.totals.gone_quiet}` : ''})
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                No updates in 3+ days
+              </span>
+            </div>
+            <Link to="/work?status=new,triaged,in_progress,blocked,awaiting_approval" className="btn btn-ghost" style={{ fontSize: '12px', padding: '2px 8px' }}>
+              View all
+            </Link>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -466,6 +528,16 @@ export const AttentionHome: React.FC = () => {
               </div>
             ))}
           </div>
+          {((data?.totals?.gone_quiet ?? 0) > goneQuiet.length) && (
+            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.02)', fontSize: '12px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                +{(data?.totals?.gone_quiet ?? 0) - goneQuiet.length} more
+              </span>
+              <Link to="/work?status=new,triaged,in_progress,blocked,awaiting_approval" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                View all →
+              </Link>
+            </div>
+          )}
         </section>
       )}
 

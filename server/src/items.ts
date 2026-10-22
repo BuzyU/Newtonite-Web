@@ -99,6 +99,36 @@ function escapeIlike(str: string): string {
   return str.replace(/[\\%_]/g, '\\$&');
 }
 
+const ALLOWED_STATUSES = new Set([
+  'new',
+  'triaged',
+  'in_progress',
+  'blocked',
+  'awaiting_approval',
+  'resolved',
+  'closed',
+]);
+
+const ALLOWED_PRIORITIES = new Set([
+  'urgent',
+  'high',
+  'medium',
+  'low',
+]);
+
+const ALLOWED_TYPES = new Set([
+  'customer_issue',
+  'engineering_problem',
+  'payment_investigation',
+  'production_incident',
+  'compliance_request',
+  'operational_task',
+]);
+
+function isValidUuid(val: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 /**
  * List items with Keyset Pagination and SQL Scoping
  */
@@ -107,7 +137,32 @@ export async function listItemsHandler(req: Request, res: Response): Promise<voi
   const query = req.query;
 
   const limit = Math.min(Math.max(parseInt((query.limit as string) || '25', 10), 1), 100);
-  const cursor = decodeCursor(query.cursor as string | undefined);
+
+  // Validate cursor: must be valid base64url JSON containing a valid ISO date and UUID
+  let cursor: { lastActivityAt: string; id: string } | null = null;
+  if (query.cursor) {
+    if (typeof query.cursor !== 'string') {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid cursor: must be a string.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+    cursor = decodeCursor(query.cursor);
+    if (!cursor || !isValidUuid(cursor.id) || isNaN(Date.parse(cursor.lastActivityAt))) {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid cursor: malformed cursor or invalid cursor id.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+  }
 
   const conditions: string[] = ['items.archived_at IS NULL'];
   const params: any[] = [];
@@ -117,41 +172,131 @@ export async function listItemsHandler(req: Request, res: Response): Promise<voi
   conditions.push(memFilter.sql);
   params.push(...memFilter.params);
 
-  // 2. Team filter
+  // 2. Team filter: must be a valid UUID
   if (query.team_id) {
+    if (typeof query.team_id !== 'string' || !isValidUuid(query.team_id)) {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid team_id: must be a valid UUID.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
     params.push(query.team_id);
     conditions.push(`items.team_id = $${params.length}`);
   }
 
-  // 3. Status filter
+  // 3. Status filter: must match allowed enum values
   if (query.status) {
-    const statusArr = (query.status as string).split(',').map(s => s.trim());
+    if (typeof query.status !== 'string') {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid status parameter.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+    const statusArr = query.status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statusArr.length === 0 || statusArr.some(s => !ALLOWED_STATUSES.has(s))) {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid status: allowed values are ${Array.from(ALLOWED_STATUSES).join(', ')}.`,
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
     params.push(statusArr);
     conditions.push(`items.status = ANY($${params.length})`);
   }
 
-  // 4. Priority filter
+  // 4. Priority filter: must match allowed enum values
   if (query.priority) {
-    const prioArr = (query.priority as string).split(',').map(p => p.trim());
+    if (typeof query.priority !== 'string') {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid priority parameter.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+    const prioArr = query.priority.split(',').map(p => p.trim()).filter(Boolean);
+    if (prioArr.length === 0 || prioArr.some(p => !ALLOWED_PRIORITIES.has(p))) {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid priority: allowed values are ${Array.from(ALLOWED_PRIORITIES).join(', ')}.`,
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
     params.push(prioArr);
     conditions.push(`items.priority = ANY($${params.length})`);
   }
 
-  // 5. Type filter
+  // 5. Type filter: must match allowed enum values
   if (query.type) {
-    const typeArr = (query.type as string).split(',').map(t => t.trim());
+    if (typeof query.type !== 'string') {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid type parameter.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+    const typeArr = query.type.split(',').map(t => t.trim()).filter(Boolean);
+    if (typeArr.length === 0 || typeArr.some(t => !ALLOWED_TYPES.has(t))) {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid type: allowed values are ${Array.from(ALLOWED_TYPES).join(', ')}.`,
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
     params.push(typeArr);
     conditions.push(`items.type = ANY($${params.length})`);
   }
 
   // 6. Assignee filter: 'me', 'unassigned', or specific UUID
   if (query.assignee) {
+    if (typeof query.assignee !== 'string') {
+      res.status(422).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid assignee parameter.',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
     if (query.assignee === 'me') {
       params.push(user.id);
       conditions.push(`items.assignee_id = $${params.length}`);
     } else if (query.assignee === 'unassigned') {
       conditions.push('items.assignee_id IS NULL');
     } else {
+      if (!isValidUuid(query.assignee)) {
+        res.status(422).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid assignee: must be "me", "unassigned", or a valid UUID.',
+            requestId: req.requestId,
+          },
+        });
+        return;
+      }
       params.push(query.assignee);
       conditions.push(`items.assignee_id = $${params.length}`);
     }
@@ -1662,13 +1807,83 @@ export async function getAttentionDashboardHandler(req: Request, res: Response):
       LIMIT 10
     `;
 
-    const [awaitingApproval, mineDue, urgentUnassigned, goneQuiet, unreadNotifications] = await Promise.all([
+    // Section total counts (cheap COUNT(*) with identical predicates)
+    const awaitingApprovalCountSql = `
+      SELECT COUNT(*)::int as count
+      FROM items
+      JOIN team_memberships tm ON tm.team_id = items.team_id AND tm.user_id = $1
+      WHERE items.status = 'awaiting_approval'
+        AND items.requires_approval = TRUE
+        AND items.archived_at IS NULL
+        AND (tm.role IN ('lead', 'admin') OR $2 = TRUE)
+        AND items.reporter_id != $1
+        AND (items.assignee_id IS NULL OR items.assignee_id != $1)
+    `;
+
+    const mineDueCountSql = `
+      SELECT COUNT(*)::int as count
+      FROM items
+      WHERE items.assignee_id = $1
+        AND items.status NOT IN ('resolved', 'closed')
+        AND items.archived_at IS NULL
+        AND items.due_at IS NOT NULL
+        AND items.due_at <= (NOW() + INTERVAL '48 hours')
+    `;
+
+    const urgentUnassignedCountSql = `
+      SELECT COUNT(*)::int as count
+      FROM items
+      WHERE items.assignee_id IS NULL
+        AND items.priority = 'urgent'
+        AND items.status NOT IN ('resolved', 'closed')
+        AND items.archived_at IS NULL
+        AND ${memFilter.sql}
+    `;
+
+    const goneQuietCountSql = `
+      SELECT COUNT(*)::int as count
+      FROM items
+      WHERE items.status NOT IN ('resolved', 'closed')
+        AND items.archived_at IS NULL
+        AND items.last_activity_at < (NOW() - INTERVAL '3 days')
+        AND ${memFilter.sql}
+    `;
+
+    const notificationsCountSql = `
+      SELECT COUNT(*)::int as count
+      FROM notifications
+      WHERE user_id = $1 AND is_read = FALSE
+    `;
+
+    const [
+      awaitingApproval,
+      awaitingApprovalCount,
+      mineDue,
+      mineDueCount,
+      urgentUnassigned,
+      urgentUnassignedCount,
+      goneQuiet,
+      goneQuietCount,
+      unreadNotifications,
+      unreadNotificationsCount,
+    ] = await Promise.all([
       pool.query(awaitingApprovalSql, [user.id, user.isOrgAdmin]),
+      pool.query(awaitingApprovalCountSql, [user.id, user.isOrgAdmin]),
       pool.query(mineDueSql, [user.id]),
+      pool.query(mineDueCountSql, [user.id]),
       pool.query(urgentUnassignedSql, memFilter.params),
+      pool.query(urgentUnassignedCountSql, memFilter.params),
       pool.query(goneQuietSql, memFilter.params),
+      pool.query(goneQuietCountSql, memFilter.params),
       pool.query(notificationsSql, [user.id]),
+      pool.query(notificationsCountSql, [user.id]),
     ]);
+
+    const totalAwaiting = parseInt(awaitingApprovalCount.rows[0]?.count ?? '0', 10);
+    const totalMineDue = parseInt(mineDueCount.rows[0]?.count ?? '0', 10);
+    const totalUrgent = parseInt(urgentUnassignedCount.rows[0]?.count ?? '0', 10);
+    const totalGoneQuiet = parseInt(goneQuietCount.rows[0]?.count ?? '0', 10);
+    const totalMentions = parseInt(unreadNotificationsCount.rows[0]?.count ?? '0', 10);
 
     res.status(200).json({
       awaiting_approval: awaitingApproval.rows,
@@ -1676,6 +1891,13 @@ export async function getAttentionDashboardHandler(req: Request, res: Response):
       urgent_unassigned: urgentUnassigned.rows,
       mentions: unreadNotifications.rows,
       gone_quiet: goneQuiet.rows,
+      totals: {
+        awaiting_approval: totalAwaiting,
+        mine_due_soon: totalMineDue,
+        urgent_unassigned: totalUrgent,
+        mentions: totalMentions,
+        gone_quiet: totalGoneQuiet,
+      },
     });
   } catch (err) {
     logger.error({ err, requestId: req.requestId }, 'Failed fetching attention dashboard data');

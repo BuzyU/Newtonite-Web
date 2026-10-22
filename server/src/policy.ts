@@ -51,14 +51,15 @@ export function can(
 ): { allowed: boolean; reason?: string; isOrgAdminOverride?: boolean } {
   // 1. Org admin bypass check
   if (user.isOrgAdmin) {
-    // Separation of duties rule still strictly applies to approval even for org admins
-    // to preserve regulatory integrity: the approver must not be the reporter or current assignee!
-    if (action === 'approve_item' && resource?.item) {
+    // Separation of duties rule still strictly applies to approval and rejection even for org admins
+    // to preserve regulatory integrity: the evaluator must not be the reporter or current assignee!
+    if ((action === 'approve_item' || action === 'reject_item') && resource?.item) {
+      const verb = action === 'approve_item' ? 'approve' : 'reject';
       if (resource.item.reporter_id === user.id) {
-        return { allowed: false, reason: 'Separation of duties: The reporter cannot approve their own item.' };
+        return { allowed: false, reason: `Separation of duties: The reporter cannot ${verb} their own item.` };
       }
       if (resource.item.assignee_id === user.id) {
-        return { allowed: false, reason: 'Separation of duties: The current assignee cannot approve their own item.' };
+        return { allowed: false, reason: `Separation of duties: The current assignee cannot ${verb} their own item.` };
       }
     }
 
@@ -144,6 +145,14 @@ export function can(
     case 'reject_item':
       if (role !== 'lead' && role !== 'admin') {
         return { allowed: false, reason: 'Only team leads and admins can reject approval requests.' };
+      }
+      if (resource.item) {
+        if (resource.item.reporter_id === user.id) {
+          return { allowed: false, reason: 'Separation of duties: The reporter cannot reject their own item.' };
+        }
+        if (resource.item.assignee_id === user.id) {
+          return { allowed: false, reason: 'Separation of duties: The current assignee cannot reject their own item.' };
+        }
       }
       return { allowed: true };
 
