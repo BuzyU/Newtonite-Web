@@ -1,14 +1,25 @@
-import React from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 
 export const LandingPage: React.FC = () => {
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const [quickOrgName, setQuickOrgName] = useState('');
 
   // If already logged in, navigate straight to dashboard
   if (!loading && user) {
     return <Navigate to="/" replace />;
   }
+
+  const handleCreateOrg = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (quickOrgName.trim()) {
+      navigate(`/onboard?org=${encodeURIComponent(quickOrgName.trim())}`);
+    } else {
+      navigate('/onboard');
+    }
+  };
 
   return (
     <div
@@ -54,12 +65,13 @@ export const LandingPage: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Link
             to="/login"
+            id="header-login-btn"
             style={{
               fontSize: '13px',
               fontWeight: 500,
               color: 'var(--color-text-primary)',
               textDecoration: 'none',
-              padding: '6px 12px',
+              padding: '6px 14px',
               borderRadius: 'var(--radius-sm)',
               border: '1px solid var(--color-border)',
               backgroundColor: 'var(--color-bg-surface)',
@@ -69,6 +81,7 @@ export const LandingPage: React.FC = () => {
           </Link>
           <Link
             to="/register"
+            id="header-create-org-btn"
             style={{
               fontSize: '13px',
               fontWeight: 600,
@@ -79,7 +92,7 @@ export const LandingPage: React.FC = () => {
               backgroundColor: 'var(--color-text-primary)',
             }}
           >
-            Create for your Organization
+            Create your Organization
           </Link>
         </div>
       </header>
@@ -140,42 +153,78 @@ export const LandingPage: React.FC = () => {
             Deterministic state machines, optimistic concurrency control, and complete tenant isolation.
           </p>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
-            <Link
-              to="/register"
-              id="landing-create-org-btn"
+          {/* Default Workflow: Create Organization with name, and Login beside it */}
+          <div style={{ maxWidth: '580px', margin: '0 auto 28px' }}>
+            <form
+              onSubmit={handleCreateOrg}
               style={{
-                fontSize: '14px',
-                fontWeight: 600,
-                color: 'var(--color-text-inverse)',
-                backgroundColor: 'var(--color-text-primary)',
-                padding: '11px 22px',
-                borderRadius: 'var(--radius-sm)',
-                textDecoration: 'none',
-                display: 'inline-flex',
+                display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-              }}
-            >
-              Create your organization &rarr;
-            </Link>
-
-            <Link
-              to="/login"
-              id="landing-login-btn"
-              style={{
-                fontSize: '14px',
-                fontWeight: 500,
-                color: 'var(--color-text-primary)',
                 backgroundColor: 'var(--color-bg-surface)',
                 border: '1px solid var(--color-border)',
-                padding: '10px 20px',
-                borderRadius: 'var(--radius-sm)',
-                textDecoration: 'none',
+                borderRadius: 'var(--radius-md)',
+                padding: '5px 5px 5px 14px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                marginBottom: '14px',
               }}
             >
-              Sign in
-            </Link>
+              <input
+                id="landing-org-name-input"
+                type="text"
+                value={quickOrgName}
+                onChange={(e) => setQuickOrgName(e.target.value)}
+                placeholder="Enter organization name (e.g. Apex Operations)..."
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  outline: 'none',
+                  fontSize: '14px',
+                  fontFamily: 'var(--font-sans)',
+                  backgroundColor: 'transparent',
+                  color: 'var(--color-text-primary)',
+                }}
+              />
+              <button
+                type="submit"
+                id="landing-create-org-btn"
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: 'var(--color-text-inverse)',
+                  backgroundColor: 'var(--color-text-primary)',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Create for your organization &rarr;
+              </button>
+            </form>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Already part of an organization?
+              </span>
+              <Link
+                to="/login"
+                id="landing-login-btn"
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: 'var(--color-accent)',
+                  textDecoration: 'none',
+                  padding: '6px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
+                  backgroundColor: 'var(--color-bg-surface)',
+                }}
+              >
+                Log in
+              </Link>
+            </div>
           </div>
         </div>
 

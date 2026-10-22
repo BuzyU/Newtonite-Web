@@ -114,9 +114,51 @@ export const LoginPage: React.FC = () => {
           <h1 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: 'var(--color-text-primary)' }}>
             Sign In to Workspace
           </h1>
-          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: 0 }}>
+          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: '0 0 16px 0' }}>
             Enter your email and password to access items and workflow queues.
           </p>
+
+          <div
+            style={{
+              display: 'flex',
+              backgroundColor: 'var(--color-bg-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '3px',
+              border: '1px solid var(--color-border-subtle)',
+            }}
+          >
+            <Link
+              to="/onboard"
+              id="login-switch-create-org"
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: 500,
+                textDecoration: 'none',
+                color: 'var(--color-text-secondary)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              Create Organization
+            </Link>
+            <div
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                backgroundColor: 'var(--color-bg-surface)',
+                color: 'var(--color-text-primary)',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              Sign In
+            </div>
+          </div>
         </div>
 
         {/* Error message */}

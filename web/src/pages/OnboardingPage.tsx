@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 
 export const OnboardingPage: React.FC = () => {
   const { registerOrg } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const queryOrg = searchParams.get('org') || searchParams.get('name') || '';
+
+  const [step, setStep] = useState<1 | 2 | 3>(queryOrg.trim() ? 2 : 1);
 
   // Form State
-  const [orgName, setOrgName] = useState('');
-  const [orgSlug, setOrgSlug] = useState('');
+  const [orgName, setOrgName] = useState(queryOrg);
+  const [orgSlug, setOrgSlug] = useState(() =>
+    queryOrg.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  );
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -129,6 +134,50 @@ export const OnboardingPage: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
           }}
         >
+          {/* Toggle between Create Org and Sign In */}
+          <div
+            style={{
+              display: 'flex',
+              backgroundColor: 'var(--color-bg-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '3px',
+              border: '1px solid var(--color-border-subtle)',
+              marginBottom: '20px',
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                backgroundColor: 'var(--color-bg-surface)',
+                color: 'var(--color-text-primary)',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              Create Organization
+            </div>
+            <Link
+              to="/login"
+              id="onboard-switch-login"
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontWeight: 500,
+                textDecoration: 'none',
+                color: 'var(--color-text-secondary)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              Sign In
+            </Link>
+          </div>
+
           {/* Step Progress Bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
             <div

@@ -59,6 +59,7 @@ export interface RequestOptions extends RequestInit {
   idempotencyKey?: string;
   ifMatch?: string | number;
   maxRetries?: number;
+  skipAuthRedirect?: boolean;
 }
 
 /**
@@ -150,10 +151,19 @@ export async function apiFetch<T = any>(
           message: typeof responseData === 'string' ? responseData : 'An unexpected error occurred.',
         };
 
-        // Redirect to login on unauthenticated
-        if (response.status === 401 && !window.location.pathname.startsWith('/login')) {
+        // Only trigger hard redirect to /login if 401 occurs while on a protected internal route.
+        // Never redirect on probe requests, root landing ('/'), onboarding, or auth callbacks.
+        const currentPath = window.location.pathname;
+        const isPublicPath =
+          currentPath === '/' ||
+          currentPath.startsWith('/login') ||
+          currentPath.startsWith('/onboard') ||
+          currentPath.startsWith('/register') ||
+          currentPath.startsWith('/auth');
+
+        if (response.status === 401 && !isPublicPath && !options.skipAuthRedirect) {
           window.location.href = `/login?redirect=${encodeURIComponent(
-            window.location.pathname + window.location.search
+            currentPath + window.location.search
           )}`;
         }
 

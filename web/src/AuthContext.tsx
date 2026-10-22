@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Verify active session on initial mount
   useEffect(() => {
     let isMounted = true;
-    apiFetch<{ user: UserProfile }>('/api/v1/auth/me')
+    apiFetch<{ user: UserProfile }>('/api/v1/auth/me', { skipAuthRedirect: true })
       .then((res) => {
         if (isMounted) setUser(res.data.user);
       })
