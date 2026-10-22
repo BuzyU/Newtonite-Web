@@ -81,6 +81,14 @@ export function parseDatabaseUrl(rawUrl?: string): { url: string; ssl: pg.Connec
 
 const { url: defaultUrl, ssl: defaultSsl } = parseDatabaseUrl(process.env.DATABASE_URL);
 
+if (process.env.NODE_ENV === 'test') {
+  if (!defaultUrl.toLowerCase().includes('test')) {
+    throw new Error(
+      `[SAFETY GUARD ABORT]: Tests must run against a dedicated test database containing 'test' in DATABASE_URL. Found: ${defaultUrl}`
+    );
+  }
+}
+
 export const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
 
 export const pool = new Pool({

@@ -85,10 +85,18 @@ docker compose up --build
 
 ## Running Automated Tests
 
-All tests run against a **real PostgreSQL 16 database** (no database mocks).
+All tests run against a **real PostgreSQL 16 database** (no database mocks). Server tests strictly use a dedicated test database (`newtonite_test`) and will automatically abort if `DATABASE_URL` does not contain `test` to prevent touching production or demo data.
+
+Before running `npm test`, you must run migrations and seed against the test database:
 
 ```bash
-# Run both backend (Supertest + pg) and frontend (Vitest + RTL) tests
+# 1. Run migrations against dedicated test database (newtonite_test)
+npm --prefix server run migrate:test
+
+# 2. Seed the baseline organizations, users, teams, and data
+npm --prefix server run seed:test
+
+# 3. Run both backend (Supertest + pg) and frontend (Vitest + RTL) tests
 npm test
 
 # Run code style and syntax linters

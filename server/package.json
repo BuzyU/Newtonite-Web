@@ -17,7 +17,8 @@
     "migrate": "tsx src/migrate.ts",
     "migrate:test": "cross-env DATABASE_URL=postgresql://postgres@localhost:5432/newtonite_test tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
-    "test": "vitest run --sequence.concurrent=false",
+    "seed:test": "cross-env DATABASE_URL=postgresql://postgres@localhost:5432/newtonite_test tsx src/seed.ts",
+    "test": "cross-env DATABASE_URL=postgresql://postgres@localhost:5432/newtonite_test vitest run --sequence.concurrent=false",
     "lint": "eslint src tests",
     "typecheck": "tsc --noEmit"
   },

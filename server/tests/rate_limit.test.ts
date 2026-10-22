@@ -1,9 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
+import { pool } from '../src/db.js';
 
 describe('Rate Limiting & Abuse Prevention', () => {
   const app = createApp();
+
+  beforeEach(async () => {
+    await pool.query('DELETE FROM rate_limits');
+  });
+
+  afterAll(async () => {
+    await pool.query('DELETE FROM rate_limits');
+  });
 
   it('rate limits login attempts per IP: returns 429 RATE_LIMIT_EXCEEDED after 5 failed attempts', async () => {
     const client = request(app);

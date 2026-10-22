@@ -10,5 +10,6 @@ export default defineConfig({
     sequence: {
       concurrent: false,
     },
+    setupFiles: ['./tests/setup.ts'],
   },
 });
