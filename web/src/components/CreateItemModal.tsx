@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
+import { useIdempotencyKey } from '../useIdempotencyKey';
 import styles from './Layout.module.css';
 
 interface Team {
@@ -28,6 +29,16 @@ export const CreateItemModal: React.FC<CreateItemModalProps> = ({ isOpen, onClos
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  // Stable idempotency key across manual retries
+  const { key: idempotencyKey, reset: resetIdempotencyKey } = useIdempotencyKey('create-item');
+
+  // Rotate key whenever modal opens afresh
+  React.useEffect(() => {
+    if (isOpen) {
+      resetIdempotencyKey();
+    }
+  }, [isOpen, resetIdempotencyKey]);
 
   const [teamId, setTeamId] = useState<string>('');
   const [type, setType] = useState<string>('customer_issue');
@@ -66,8 +77,13 @@ export const CreateItemModal: React.FC<CreateItemModalProps> = ({ isOpen, onClos
   const members = teamDetail?.members || [];
 
   const createMutation = useMutation<{ item: { id: string; short_ref: string } }, any, any>({
-    mutationFn: (payload: any) => api.post<{ item: { id: string; short_ref: string } }>('/items', payload),
+    mutationFn: (payload: any) =>
+      api.post<{ item: { id: string; short_ref: string } }>('/items', payload, {
+        idempotencyKey,
+        maxRetries: 1, // Safe to retry once on 503 since idempotency key guarantees exactly-once server execution
+      }),
     onSuccess: (res) => {
+      resetIdempotencyKey();
       queryClient.invalidateQueries({ queryKey: ['items'] });
       queryClient.invalidateQueries({ queryKey: ['attention'] });
       onClose();

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api';
 import { useAuth } from '../AuthContext';
+import { useIdempotencyKey } from '../useIdempotencyKey';
 
 interface ItemDetailData {
   item: {
@@ -127,6 +128,12 @@ export const ItemDetail: React.FC = () => {
 
   const item = data?.item;
 
+  // Idempotency keys per user intent
+  const { key: updateKey, reset: resetUpdateKey } = useIdempotencyKey('update');
+  const { key: claimKey, reset: resetClaimKey } = useIdempotencyKey('claim');
+  const { key: transitionKey, reset: resetTransitionKey } = useIdempotencyKey('transition');
+  const { key: commentKey, reset: resetCommentKey } = useIdempotencyKey('comment');
+
   // Mutation for updating item with optimistic concurrency (If-Match)
   const updateMutation = useMutation({
     mutationFn: ({ changes, version }: { changes: any; version: number }) => {
@@ -136,9 +143,12 @@ export const ItemDetail: React.FC = () => {
         headers: {
           'If-Match': `"${version}"`,
         },
+        idempotencyKey: updateKey,
+        maxRetries: 1, // Safe to retry once on 503 since idempotency key guarantees exactly-once server execution
       });
     },
     onSuccess: () => {
+      resetUpdateKey();
       setIsEditing(false);
       setSaveStatus('saved');
       setStaleConflict(null);
@@ -164,8 +174,17 @@ export const ItemDetail: React.FC = () => {
 
   // Mutation for atomic claim
   const claimMutation = useMutation({
-    mutationFn: () => api.post(`/items/${id}/claim`),
+    mutationFn: () =>
+      api.post(
+        `/items/${id}/claim`,
+        {},
+        {
+          idempotencyKey: claimKey,
+          maxRetries: 1,
+        }
+      ),
     onSuccess: () => {
+      resetClaimKey();
       setClaimError(null);
       queryClient.invalidateQueries({ queryKey: ['item', id] });
       queryClient.invalidateQueries({ queryKey: ['items'] });
@@ -187,18 +206,24 @@ export const ItemDetail: React.FC = () => {
     mutationFn: ({ targetStatus, action, note }: { targetStatus?: string; action?: string; note?: string }) => {
       setActionError(null);
       const headers = item?.version ? { 'If-Match': `"${item.version}"` } : undefined;
+      const opts = {
+        headers,
+        idempotencyKey: transitionKey,
+        maxRetries: 1,
+      };
       if (action === 'approve') {
-        return api.post(`/items/${id}/approve`, { note }, { headers });
+        return api.post(`/items/${id}/approve`, { note }, opts);
       }
       if (action === 'reject') {
-        return api.post(`/items/${id}/reject`, { note }, { headers });
+        return api.post(`/items/${id}/reject`, { note }, opts);
       }
       if (action === 'reopen') {
-        return api.post(`/items/${id}/reopen`, { note }, { headers });
+        return api.post(`/items/${id}/reopen`, { note }, opts);
       }
-      return api.post(`/items/${id}/transition`, { status: targetStatus, note }, { headers });
+      return api.post(`/items/${id}/transition`, { status: targetStatus, note }, opts);
     },
     onSuccess: () => {
+      resetTransitionKey();
       setActionModal(null);
       setActionNote('');
       setActionError(null);
@@ -221,8 +246,17 @@ export const ItemDetail: React.FC = () => {
 
   // Mutation for comments
   const commentMutation = useMutation({
-    mutationFn: (content: string) => api.post(`/items/${id}/comments`, { content }),
+    mutationFn: (content: string) =>
+      api.post(
+        `/items/${id}/comments`,
+        { content },
+        {
+          idempotencyKey: commentKey,
+          maxRetries: 1,
+        }
+      ),
     onSuccess: () => {
+      resetCommentKey();
       setNewComment('');
       setCommentError(null);
       queryClient.invalidateQueries({ queryKey: ['item', id] });

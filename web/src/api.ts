@@ -84,7 +84,17 @@ export async function apiFetch<T = any>(
   headers.set('X-Requested-With', 'XMLHttpRequest');
 
   const method = (options.method || 'GET').toUpperCase();
-  const maxRetries = options.maxRetries ?? 0;
+
+  // Retry Policy & Idempotency Deliberation (T1):
+  // - Mutating operations (POST, PATCH, PUT, DELETE) are ONLY safe to retry when an Idempotency-Key
+  //   is attached. Our backend reserves the key in a PostgreSQL transaction; any retried attempt with the
+  //   same key either awaits the in-flight execution, returns the cached response, or re-attempts if the
+  //   prior attempt suffered an unhandled 5xx (5xx entries are automatically purged on server rollback).
+  // - For safe mutations with a stable key (e.g. CreateItem, Claim, Transition, Update, Comment),
+  //   callers set `maxRetries: 1` to gracefully handle transient network drops or Render cold-start 503s.
+  // - Callers that do not provide an explicit intent key default to `maxRetries: 0` to prevent accidental
+  //   duplicate submissions.
+  const maxRetries = options.maxRetries ?? (['GET', 'HEAD', 'OPTIONS'].includes(method) ? 1 : 0);
 
   // Attach Idempotency-Key on mutating requests if not already provided
   // Stored in headers so all automatic retries reuse the exact same key (CONC-02)
