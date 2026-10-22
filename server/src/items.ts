@@ -92,6 +92,14 @@ function decodeCursor(cursorStr?: string): { lastActivityAt: string; id: string 
 }
 
 /**
+ * Escapes PostgreSQL LIKE/ILIKE wildcards (%, _, \) so substring searches
+ * match user inputs literally rather than acting as pattern wildcards.
+ */
+function escapeIlike(str: string): string {
+  return str.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
  * List items with Keyset Pagination and SQL Scoping
  */
 export async function listItemsHandler(req: Request, res: Response): Promise<void> {
@@ -166,18 +174,32 @@ export async function listItemsHandler(req: Request, res: Response): Promise<voi
     conditions.push(`items.due_at <= $${params.length}`);
   }
 
-  // 9. Search: Full-text search + Trigram ILIKE substring search
-  if (query.search && typeof query.search === 'string' && query.search.trim().length > 0) {
-    const searchStr = query.search.trim();
-    params.push(searchStr);
-    const searchIdx = params.length;
+  let withCte = '';
+  let joinHits = '';
 
-    // Use full-text search against generated tsvector OR trigram matching on title / short_ref
-    conditions.push(`(
-      items.search_vector @@ websearch_to_tsquery('english', $${searchIdx})
-      OR items.title ILIKE '%' || $${searchIdx} || '%'
-      OR items.short_ref ILIKE '%' || $${searchIdx} || '%'
-    )`);
+  // 9. Search: Index-friendly UNION of full-text search and trigram substring search (T3)
+  if (query.search && typeof query.search === 'string' && query.search.trim().length > 0) {
+    const rawSearch = query.search.trim();
+    const escapedSearch = escapeIlike(rawSearch);
+
+    params.push(user.orgId, rawSearch, escapedSearch);
+    const orgIdx = params.length - 2;
+    const rawIdx = params.length - 1;
+    const escIdx = params.length;
+
+    withCte = `
+      WITH hits AS (
+        SELECT id FROM items WHERE org_id = $${orgIdx} AND archived_at IS NULL
+          AND search_vector @@ websearch_to_tsquery('english', $${rawIdx})
+        UNION
+        SELECT id FROM items WHERE org_id = $${orgIdx} AND archived_at IS NULL
+          AND title ILIKE '%' || $${escIdx} || '%'
+        UNION
+        SELECT id FROM items WHERE org_id = $${orgIdx} AND archived_at IS NULL
+          AND short_ref ILIKE '%' || $${escIdx} || '%'
+      )
+    `;
+    joinHits = 'JOIN hits ON hits.id = items.id';
   }
 
   // 10. Keyset pagination predicate: (last_activity_at, id) < (cursorTime, cursorId)
@@ -189,6 +211,7 @@ export async function listItemsHandler(req: Request, res: Response): Promise<voi
   params.push(limit + 1); // fetch 1 extra to check hasNextPage
 
   const sql = `
+    ${withCte}
     SELECT 
       items.id,
       items.short_ref,
@@ -216,6 +239,7 @@ export async function listItemsHandler(req: Request, res: Response): Promise<voi
       items.last_activity_at,
       items.closed_at
     FROM items
+    ${joinHits}
     JOIN teams t ON t.id = items.team_id
     JOIN users u_rep ON u_rep.id = items.reporter_id
     LEFT JOIN users u_asg ON u_asg.id = items.assignee_id
